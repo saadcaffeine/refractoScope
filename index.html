@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e1a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="refractoScope">
+<meta name="description" content="Live camera reader for optical refractometer Brix% scales. Works offline.">
+<title>refractoScope</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span>refractoScope</span>
+    </div>
+    <div class="topbar-actions">
+      <button id="btn-permissions" class="icon-btn" title="Permissions" aria-label="Permissions">
+        <svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5zm0 2a3 3 0 0 0-3 3v3h6V7a3 3 0 0 0-3-3z"/></svg>
+      </button>
+      <button id="btn-settings" class="icon-btn" title="Calibrate & settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm9 4c0 .66-.06 1.3-.17 1.92l2.05 1.6a.75.75 0 0 1 .18.96l-1.94 3.36a.75.75 0 0 1-.9.33l-2.42-.97c-.5.4-1.06.73-1.65.98l-.36 2.57a.75.75 0 0 1-.74.65h-3.88a.75.75 0 0 1-.74-.65l-.36-2.57c-.6-.25-1.15-.58-1.65-.98l-2.42.97a.75.75 0 0 1-.9-.33L2.19 16.5a.75.75 0 0 1 .18-.96l2.05-1.6C4.31 13.3 4.25 12.66 4.25 12s.06-1.3.17-1.92l-2.05-1.6a.75.75 0 0 1-.18-.96l1.94-3.36a.75.75 0 0 1 .9-.33l2.42.97c.5-.4 1.06-.73 1.65-.98l.36-2.57A.75.75 0 0 1 10.2 1h3.88c.37 0 .68.27.74.65l.36 2.57c.6.25 1.15.58 1.65.98l2.42-.97a.75.75 0 0 1 .9.33l1.94 3.36a.75.75 0 0 1-.18.96l-2.05 1.6c.11.62.17 1.26.17 1.92z" fill="none" stroke="currentColor" stroke-width="0"/><path d="M19.4 13.6l1.9 1.5-1.9 3.3-2.3-.9c-.5.4-1.1.7-1.7.9l-.3 2.4H9.9l-.3-2.4a6 6 0 0 1-1.7-.9l-2.3.9-1.9-3.3 1.9-1.5A6.4 6.4 0 0 1 5.5 12c0-.5.1-1.1.2-1.6L3.8 8.9l1.9-3.3 2.3.9c.5-.4 1.1-.7 1.7-.9l.3-2.4h3.9l.3 2.4c.6.2 1.2.5 1.7.9l2.3-.9 1.9 3.3-1.9 1.5c.1.5.2 1.1.2 1.6s-.1 1.1-.2 1.6zM12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="view">
+
+    <!-- Permission gate -->
+    <section id="screen-permission" class="screen">
+      <div class="permission-card">
+        <div class="permission-icon">
+          <svg viewBox="0 0 24 24" width="48" height="48"><path d="M4 7a2 2 0 0 1 2-2h2.2l.8-1.2A2 2 0 0 1 10.66 3h2.68a2 2 0 0 1 1.66.8L15.8 5H18a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="13" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        </div>
+        <h1>Camera access needed</h1>
+        <p>refractoScope reads the Brix% scale live through your camera. Nothing leaves your device &mdash; all processing happens locally, and the app keeps working offline once loaded.</p>
+        <button id="btn-request-camera" class="btn-primary">Enable camera</button>
+        <p id="permission-status" class="permission-status">Status: checking&hellip;</p>
+        <div id="permission-denied-help" class="permission-help hidden">
+          <p><strong>Camera access is blocked.</strong> Open your browser's site settings for this page and allow Camera, then reload.</p>
+          <ul>
+            <li><strong>iOS Safari:</strong> Settings app &rarr; Safari &rarr; Camera &rarr; Allow (or the &ldquo;aA&rdquo; menu in the address bar &rarr; Website Settings).</li>
+            <li><strong>Android Chrome:</strong> tap the lock/info icon left of the address bar &rarr; Permissions &rarr; Camera &rarr; Allow.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Live camera + reading -->
+    <section id="screen-live" class="screen hidden">
+      <div class="camera-wrap">
+        <video id="video" playsinline autoplay muted></video>
+        <canvas id="overlay"></canvas>
+        <div id="offline-badge" class="badge hidden">Offline</div>
+        <div id="stability-badge" class="badge badge-stability hidden">Stabilizing&hellip;</div>
+        <button id="btn-torch" class="icon-btn torch-btn hidden" title="Toggle flashlight" aria-label="Toggle flashlight">
+          <svg viewBox="0 0 24 24"><path d="M9 2h6l-1 7h3l-8 13 1.5-9H7z"/></svg>
+        </button>
+      </div>
+
+      <div class="readout">
+        <div class="readout-main">
+          <div class="readout-value"><span id="brix-value">--.-</span><span class="unit">°Bx</span></div>
+          <div class="readout-sub">SG (wort) est. <span id="sg-value">--</span></div>
+        </div>
+        <div class="readout-meta">
+          <span id="confidence-dot" class="dot"></span>
+          <span id="confidence-label">No signal</span>
+        </div>
+      </div>
+
+      <div class="hint" id="live-hint">Align the scale with the guide box, then tap <strong>Calibrate</strong> once to teach refractoScope your scale.</div>
+    </section>
+
+    <!-- Calibration -->
+    <section id="screen-calibrate" class="screen hidden">
+      <div class="camera-wrap">
+        <canvas id="cal-canvas"></canvas>
+      </div>
+      <div class="cal-panel">
+        <p class="cal-instructions">Drag the two handles onto two known tick marks on the scale (e.g. the <strong>30</strong> and <strong>0</strong> Brix ticks), narrow the box to sit just inside the tick column, then confirm the values below.</p>
+        <div class="cal-fields">
+          <label>Top handle value
+            <input id="cal-top-value" type="number" inputmode="decimal" value="30" step="0.5">
+          </label>
+          <label>Bottom handle value
+            <input id="cal-bottom-value" type="number" inputmode="decimal" value="0" step="0.5">
+          </label>
+        </div>
+        <div class="cal-actions">
+          <button id="btn-cal-cancel" class="btn-secondary">Cancel</button>
+          <button id="btn-cal-save" class="btn-primary">Save calibration</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section id="screen-settings" class="screen hidden">
+      <div class="settings-panel">
+        <h2>Settings</h2>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">Camera permission</div>
+            <div class="settings-sub" id="settings-permission-status">Checking&hellip;</div>
+          </div>
+          <button id="btn-settings-permission" class="btn-secondary">Check</button>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">Calibration</div>
+            <div class="settings-sub" id="settings-cal-status">Not calibrated</div>
+          </div>
+          <button id="btn-settings-calibrate" class="btn-secondary">Calibrate</button>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">Camera</div>
+            <div class="settings-sub">Switch between front / back camera</div>
+          </div>
+          <button id="btn-switch-camera" class="btn-secondary">Switch</button>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">Keep screen awake</div>
+            <div class="settings-sub">Prevents the display sleeping during live reads</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-wakelock" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">Offline status</div>
+            <div class="settings-sub" id="settings-offline-status">Checking&hellip;</div>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">Reset calibration</div>
+            <div class="settings-sub">Clears saved scale calibration</div>
+          </div>
+          <button id="btn-reset-cal" class="btn-danger">Reset</button>
+        </div>
+
+        <button id="btn-close-settings" class="btn-primary settings-close">Done</button>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="tabbar">
+    <button class="tab-btn active" data-screen="screen-live">
+      <svg viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2-2h2.2l.8-1.2A2 2 0 0 1 10.66 3h2.68a2 2 0 0 1 1.66.8L15.8 5H18a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="13" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      <span>Live</span>
+    </button>
+    <button class="tab-btn" data-screen="screen-calibrate">
+      <svg viewBox="0 0 24 24"><path d="M4 12h16M4 12a2 2 0 1 0 4 0 2 2 0 0 0-4 0zM16 6h4M16 18h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      <span>Calibrate</span>
+    </button>
+    <button class="tab-btn" data-screen="screen-settings">
+      <svg viewBox="0 0 24 24"><path d="M19.4 13.6l1.9 1.5-1.9 3.3-2.3-.9c-.5.4-1.1.7-1.7.9l-.3 2.4H9.9l-.3-2.4a6 6 0 0 1-1.7-.9l-2.3.9-1.9-3.3 1.9-1.5A6.4 6.4 0 0 1 5.5 12c0-.5.1-1.1.2-1.6L3.8 8.9l1.9-3.3 2.3.9c.5-.4 1.1-.7 1.7-.9l.3-2.4h3.9l.3 2.4c.6.2 1.2.5 1.7.9l2.3-.9 1.9 3.3-1.9 1.5c.1.5.2 1.1.2 1.6s-.1 1.1-.2 1.6zM12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+</div>
+
+<script src="js/camera.js"></script>
+<script src="js/detector.js"></script>
+<script src="js/calibration.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
