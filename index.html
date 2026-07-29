@@ -24,9 +24,10 @@
       <span class="brand-dot"></span>
       <span>refractoScope</span>
     </div>
+    <div class="weather-chip hidden" id="weather-chip" title="Today's temperature range"></div>
     <div class="topbar-actions">
-      <button id="btn-permissions" class="icon-btn" title="Permissions" aria-label="Permissions">
-        <svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5zm0 2a3 3 0 0 0-3 3v3h6V7a3 3 0 0 0-3-3z"/></svg>
+      <button id="level-widget" class="icon-btn level-widget" title="Level indicator" aria-label="Level indicator">
+        <canvas id="level-canvas" width="30" height="30"></canvas>
       </button>
       <button id="btn-settings" class="icon-btn" title="Calibrate & settings" aria-label="Settings">
         <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm9 4c0 .66-.06 1.3-.17 1.92l2.05 1.6a.75.75 0 0 1 .18.96l-1.94 3.36a.75.75 0 0 1-.9.33l-2.42-.97c-.5.4-1.06.73-1.65.98l-.36 2.57a.75.75 0 0 1-.74.65h-3.88a.75.75 0 0 1-.74-.65l-.36-2.57c-.6-.25-1.15-.58-1.65-.98l-2.42.97a.75.75 0 0 1-.9-.33L2.19 16.5a.75.75 0 0 1 .18-.96l2.05-1.6C4.31 13.3 4.25 12.66 4.25 12s.06-1.3.17-1.92l-2.05-1.6a.75.75 0 0 1-.18-.96l1.94-3.36a.75.75 0 0 1 .9-.33l2.42.97c.5-.4 1.06-.73 1.65-.98l.36-2.57A.75.75 0 0 1 10.2 1h3.88c.37 0 .68.27.74.65l.36 2.57c.6.25 1.15.58 1.65.98l2.42-.97a.75.75 0 0 1 .9.33l1.94 3.36a.75.75 0 0 1-.18.96l-2.05 1.6c.11.62.17 1.26.17 1.92z" fill="none" stroke="currentColor" stroke-width="0"/><path d="M19.4 13.6l1.9 1.5-1.9 3.3-2.3-.9c-.5.4-1.1.7-1.7.9l-.3 2.4H9.9l-.3-2.4a6 6 0 0 1-1.7-.9l-2.3.9-1.9-3.3 1.9-1.5A6.4 6.4 0 0 1 5.5 12c0-.5.1-1.1.2-1.6L3.8 8.9l1.9-3.3 2.3.9c.5-.4 1.1-.7 1.7-.9l.3-2.4h3.9l.3 2.4c.6.2 1.2.5 1.7.9l2.3-.9 1.9 3.3-1.9 1.5c.1.5.2 1.1.2 1.6s-.1 1.1-.2 1.6zM12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></svg>
@@ -73,6 +74,9 @@
           <div class="readout-value"><span id="brix-value">--.-</span><span class="unit">°Bx</span></div>
           <div class="readout-sub">SG (wort) est. <span id="sg-value">--</span></div>
         </div>
+        <button id="btn-snapshot" class="snapshot-btn" title="Save snapshot" aria-label="Save snapshot" disabled>
+          <svg viewBox="0 0 24 24"><path d="M9 3.5 7.6 5.5H5a2 2 0 0 0-2 2v10.5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7.5a2 2 0 0 0-2-2h-2.6L15 3.5H9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        </button>
         <div class="readout-meta">
           <span id="confidence-dot" class="dot"></span>
           <span id="confidence-label">No signal</span>
@@ -119,6 +123,22 @@
 
         <div class="settings-row">
           <div>
+            <div class="settings-title">Motion &amp; orientation</div>
+            <div class="settings-sub" id="settings-level-status">Checking&hellip;</div>
+          </div>
+          <button id="btn-settings-level" class="btn-secondary">Check</button>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">Local weather</div>
+            <div class="settings-sub" id="settings-weather-status">Off &mdash; uses your location, never stored elsewhere</div>
+          </div>
+          <button id="btn-settings-weather" class="btn-secondary">Enable</button>
+        </div>
+
+        <div class="settings-row">
+          <div>
             <div class="settings-title">Calibration</div>
             <div class="settings-sub" id="settings-cal-status">Not calibrated</div>
           </div>
@@ -131,6 +151,32 @@
             <div class="settings-sub">Switch between front / back camera</div>
           </div>
           <button id="btn-switch-camera" class="btn-secondary">Switch</button>
+        </div>
+
+        <div class="settings-row hidden" id="row-lens">
+          <div>
+            <div class="settings-title">Lens</div>
+            <div class="settings-sub" id="lens-sub-status">Detecting lenses&hellip;</div>
+          </div>
+          <select id="lens-select" class="lens-select" aria-label="Choose lens"></select>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">Snapshots</div>
+            <div class="settings-sub" id="settings-snapshot-status">Checking&hellip;</div>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">Include overlay in snapshot</div>
+            <div class="settings-sub">Burns in the guide box, detected line, and reading</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-snapshot-overlay" checked>
+            <span class="slider"></span>
+          </label>
         </div>
 
         <div class="settings-row">
@@ -175,7 +221,7 @@
       <span>Calibrate</span>
     </button>
     <button class="tab-btn" data-screen="screen-settings">
-      <svg viewBox="0 0 24 24"><path d="M19.4 13.6l1.9 1.5-1.9 3.3-2.3-.9c-.5.4-1.1.7-1.7.9l-.3 2.4H9.9l-.3-2.4a6 6 0 0 1-1.7-.9l-2.3.9-1.9-3.3 1.9-1.5A6.4 6.4 0 0 1 5.5 12c0-.5.1-1.1.2-1.6L3.8 8.9l1.9-3.3 2.3.9c.5-.4 1.1-.7 1.7-.9l.3-2.4h3.9l.3 2.4c.6.2 1.2.5 1.7.9l2.3-.9 1.9 3.3-1.9 1.5c.1.5.2 1.1.2 1.6s-.1 1.1-.2 1.6zM12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></svg>
+      <svg viewBox="0 0 24 24" style="fill: currentColor;"><path d="M19.4 13.6l1.9 1.5-1.9 3.3-2.3-.9c-.5.4-1.1.7-1.7.9l-.3 2.4H9.9l-.3-2.4a6 6 0 0 1-1.7-.9l-2.3.9-1.9-3.3 1.9-1.5A6.4 6.4 0 0 1 5.5 12c0-.5.1-1.1.2-1.6L3.8 8.9l1.9-3.3 2.3.9c.5-.4 1.1-.7 1.7-.9l.3-2.4h3.9l.3 2.4c.6.2 1.2.5 1.7.9l2.3-.9 1.9 3.3-1.9 1.5c.1.5.2 1.1.2 1.6s-.1 1.1-.2 1.6zM12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></svg>
       <span>Settings</span>
     </button>
   </nav>
@@ -185,6 +231,8 @@
 <script src="js/camera.js"></script>
 <script src="js/detector.js"></script>
 <script src="js/calibration.js"></script>
+<script src="js/level.js"></script>
+<script src="js/weather.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

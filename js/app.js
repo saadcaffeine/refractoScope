@@ -18,10 +18,19 @@
     btnRequestCamera: $("btn-request-camera"),
     permissionStatus: $("permission-status"),
     permissionDeniedHelp: $("permission-denied-help"),
-    btnPermissionsTop: $("btn-permissions"),
     btnSettingsTop: $("btn-settings"),
+    levelWidget: $("level-widget"),
+    levelCanvas: $("level-canvas"),
+    weatherChip: $("weather-chip"),
+    settingsLevelStatus: $("settings-level-status"),
+    btnSettingsLevel: $("btn-settings-level"),
+    settingsWeatherStatus: $("settings-weather-status"),
+    btnSettingsWeather: $("btn-settings-weather"),
     brixValue: $("brix-value"),
     sgValue: $("sg-value"),
+    btnSnapshot: $("btn-snapshot"),
+    settingsSnapshotStatus: $("settings-snapshot-status"),
+    toggleSnapshotOverlay: $("toggle-snapshot-overlay"),
     confidenceDot: $("confidence-dot"),
     confidenceLabel: $("confidence-label"),
     offlineBadge: $("offline-badge"),
@@ -36,6 +45,9 @@
     settingsCalStatus: $("settings-cal-status"),
     btnSettingsCalibrate: $("btn-settings-calibrate"),
     btnSwitchCamera: $("btn-switch-camera"),
+    rowLens: $("row-lens"),
+    lensSelect: $("lens-select"),
+    lensSubStatus: $("lens-sub-status"),
     toggleWakelock: $("toggle-wakelock"),
     settingsOfflineStatus: $("settings-offline-status"),
     btnResetCal: $("btn-reset-cal"),
@@ -87,7 +99,6 @@
       switchScreen(btn.dataset.screen);
     });
   });
-  els.btnPermissionsTop.addEventListener("click", () => switchScreen("screen-settings"));
   els.btnSettingsTop.addEventListener("click", () => switchScreen("screen-settings"));
   els.btnCloseSettings.addEventListener("click", () => switchScreen(cameraReady ? "screen-live" : "screen-permission"));
 
@@ -117,6 +128,8 @@
       switchScreen("screen-live");
       startDetectionLoop();
       setupTorchButton();
+      refreshLensUI();
+      els.btnSnapshot.disabled = false;
     } else {
       let msg = "Status: ";
       els.permissionDeniedHelp.classList.add("hidden");
@@ -151,6 +164,191 @@
     if (ok) els.btnTorch.classList.toggle("active", next);
   });
 
+  // ---------- Digital plumb level ----------
+  function levelTooltip() {
+    const L = window.LevelCtl;
+    if (!L.supported) return "Level: not supported by this browser";
+    if (L.active) return "Level indicator";
+    if (L.needsPermission && L.permissionState === "denied") return "Motion access blocked — tap for details in Settings";
+    if (L.needsPermission) return "Tap to enable the level";
+    return "Level indicator";
+  }
+
+  function drawLevel() {
+    const L = window.LevelCtl;
+    const canvas = els.levelCanvas;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height;
+    const cx = w / 2, cy = h / 2;
+    const outerR = w / 2 - 3;
+
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.strokeStyle = "rgba(234,240,255,0.35)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(cx - 3, cy); ctx.lineTo(cx + 3, cy);
+    ctx.moveTo(cx, cy - 3); ctx.lineTo(cx, cy + 3);
+    ctx.stroke();
+
+    if (!L.active) {
+      ctx.fillStyle = "rgba(142,160,198,0.55)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+
+    const MAX_DEG = 20; // tilt magnitude that maps to the edge of the ring
+    let ox = (L.tilt.x / MAX_DEG) * outerR;
+    let oy = (L.tilt.y / MAX_DEG) * outerR;
+    const dist = Math.hypot(ox, oy);
+    const clampR = outerR - 4;
+    if (dist > clampR) {
+      const scale = clampR / dist;
+      ox *= scale;
+      oy *= scale;
+    }
+
+    const level = L.classify();
+    ctx.fillStyle = level === "good" ? "#35d38a" : level === "warn" ? "#f2b544" : "#ff5b6e";
+    ctx.beginPath();
+    ctx.arc(cx + ox, cy + oy, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function startLevelLoop() {
+    setInterval(() => {
+      if (document.hidden) return;
+      drawLevel();
+    }, 120);
+  }
+
+  function settingsLevelStatusText() {
+    const L = window.LevelCtl;
+    if (!L.supported) return "Not supported by this browser";
+    if (L.active) return "Active";
+    if (L.needsPermission && L.permissionState === "denied") return "Blocked — re-enable via device Settings app";
+    if (L.needsPermission) return "Not yet enabled — tap Enable";
+    return "Waiting for first reading…";
+  }
+
+  els.levelWidget.addEventListener("click", async () => {
+    const L = window.LevelCtl;
+    if (!L.active) {
+      await L.requestPermission();
+      els.levelWidget.title = levelTooltip();
+      if (activeScreen === "screen-settings") refreshSettingsScreen();
+    }
+  });
+
+  els.btnSettingsLevel.addEventListener("click", async () => {
+    await window.LevelCtl.requestPermission();
+    refreshSettingsScreen();
+  });
+
+  // ---------- Local weather (opt-in, needs geolocation) ----------
+  function formatWeatherChip(range) {
+    if (!range) return "";
+    const lo = Math.round(range.min);
+    const hi = Math.round(range.max);
+    return `${lo}°–${hi}°C`;
+  }
+
+  function updateWeatherChip() {
+    const W = window.WeatherCtl;
+    if (W.status === "ready" && W.range) {
+      els.weatherChip.textContent = formatWeatherChip(W.range);
+      els.weatherChip.classList.remove("hidden");
+    } else {
+      els.weatherChip.classList.add("hidden");
+    }
+  }
+
+  function settingsWeatherStatusText() {
+    const W = window.WeatherCtl;
+    if (!W.isEnabled()) return "Off — uses your location, never stored elsewhere";
+    switch (W.status) {
+      case "locating": return "Finding your location…";
+      case "fetching": return "Fetching today's forecast…";
+      case "ready": return `Today: ${formatWeatherChip(W.range)}`;
+      case "denied": return "Location access blocked — re-enable via browser/device settings";
+      case "unsupported": return "Geolocation not supported by this browser";
+      case "offline": return "Offline — will retry once you're back online";
+      case "error": return "Couldn't fetch the forecast — tap Retry";
+      default: return "Enabled — tap Refresh";
+    }
+  }
+
+  function updateWeatherSettingsUI() {
+    const W = window.WeatherCtl;
+    els.settingsWeatherStatus.textContent = settingsWeatherStatusText();
+    els.btnSettingsWeather.textContent = !W.isEnabled() ? "Enable" : W.status === "error" ? "Retry" : "Refresh";
+  }
+
+  els.btnSettingsWeather.addEventListener("click", async () => {
+    const W = window.WeatherCtl;
+    if (!W.isEnabled()) W.setEnabled(true);
+    els.settingsWeatherStatus.textContent = "Requesting location…";
+    els.btnSettingsWeather.disabled = true;
+    await W.refresh();
+    els.btnSettingsWeather.disabled = false;
+    updateWeatherSettingsUI();
+    updateWeatherChip();
+  });
+
+  // ---------- Lens picker (multiple back/front cameras) ----------
+  function refreshLensUI() {
+    const cams = window.CameraCtl.listCamerasForFacing(window.CameraCtl.facingMode);
+
+    if (!cams || cams.length <= 1) {
+      els.rowLens.classList.add("hidden");
+      return;
+    }
+
+    els.rowLens.classList.remove("hidden");
+
+    // Rebuild options only if the set of devices actually changed, so we
+    // don't fight the user's open dropdown / lose their selection mid-edit.
+    const currentIds = Array.from(els.lensSelect.options).map((o) => o.value).join("|");
+    const newIds = cams.map((c) => c.deviceId).join("|");
+    if (currentIds !== newIds) {
+      els.lensSelect.innerHTML = "";
+      cams.forEach((cam, i) => {
+        const opt = document.createElement("option");
+        opt.value = cam.deviceId;
+        opt.textContent = cam.lensName || `Lens ${i + 1}`;
+        els.lensSelect.appendChild(opt);
+      });
+    }
+
+    const current = cams.find((c) => c.deviceId === window.CameraCtl.deviceId);
+    if (current) {
+      els.lensSelect.value = current.deviceId;
+      els.lensSubStatus.textContent = `Using ${current.lensName} (${cams.length} lenses detected)`;
+    } else {
+      els.lensSubStatus.textContent = `${cams.length} lenses detected — choose one`;
+    }
+  }
+
+  els.lensSelect.addEventListener("change", async () => {
+    const deviceId = els.lensSelect.value;
+    if (!deviceId) return;
+    els.lensSubStatus.textContent = "Switching lens…";
+    const result = await window.CameraCtl.startWithDeviceId(els.video, deviceId);
+    if (result.ok) {
+      smoother.reset();
+      setupTorchButton();
+      refreshLensUI();
+    } else {
+      els.lensSubStatus.textContent = "Couldn't switch to that lens";
+    }
+  });
+
   // ---------- Cover-fit drawing helper ----------
   function getCoverSourceRect(video, containerAspect) {
     const vw = video.videoWidth || 1;
@@ -177,6 +375,274 @@
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, destW, destH);
     return true;
   }
+
+  // ---------- Snapshot (save a still image locally) ----------
+  const SNAPSHOT_OVERLAY_KEY = "refractoscope.snapshot.overlay";
+
+  function snapshotOverlayEnabled() {
+    try {
+      const v = localStorage.getItem(SNAPSHOT_OVERLAY_KEY);
+      return v === null ? true : v === "1";
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function setSnapshotOverlayEnabled(v) {
+    try {
+      localStorage.setItem(SNAPSHOT_OVERLAY_KEY, v ? "1" : "0");
+    } catch (e) { /* ignore storage errors (e.g. private mode) */ }
+  }
+
+  // ---- Best-effort metadata for the snapshot overlay ----
+  // Every lookup here is wrapped so a missing/unsupported API just
+  // yields null/omitted rather than breaking the snapshot.
+
+  let _deviceLabelCache; // undefined = not yet resolved, null/false = resolved to nothing
+
+  /**
+   * Browsers deliberately don't expose a real "device model" for
+   * fingerprinting reasons. Chromium's User-Agent Client Hints give an
+   * actual model string on Android; nothing does on iOS/desktop, so we
+   * fall back to parsing whatever coarse platform hint the classic UA
+   * string carries (often still includes the model on Android).
+   */
+  async function resolveDeviceLabel() {
+    if (_deviceLabelCache !== undefined) return _deviceLabelCache;
+    let label = null;
+    try {
+      if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+        const uaData = await navigator.userAgentData.getHighEntropyValues(["model", "platform", "platformVersion"]);
+        if (uaData && uaData.model) label = uaData.model;
+        else if (uaData && uaData.platform) label = [uaData.platform, uaData.platformVersion].filter(Boolean).join(" ");
+      }
+    } catch (e) { /* ignore, fall through to UA-string guess */ }
+
+    if (!label) {
+      try {
+        const ua = navigator.userAgent || "";
+        let m;
+        if ((m = ua.match(/Android[^;]*;\s*([^)]+?)\)/))) {
+          label = m[1].replace(/\s*Build\/.*/, "").trim();
+        } else if (/iPhone/.test(ua)) {
+          label = "iPhone";
+        } else if (/iPad/.test(ua)) {
+          label = "iPad";
+        } else if (/Macintosh/.test(ua)) {
+          label = "Mac";
+        } else if (/Windows/.test(ua)) {
+          label = "Windows PC";
+        }
+      } catch (e) { /* ignore */ }
+    }
+    _deviceLabelCache = label || null;
+    return _deviceLabelCache;
+  }
+
+  /** Facing + lens name, reusing the same data the Lens picker uses. */
+  function getLensLabel() {
+    try {
+      const facing = window.CameraCtl.facingMode;
+      const facingLabel = facing === "user" ? "Front" : facing === "environment" ? "Back" : null;
+      const cams = window.CameraCtl.listCamerasForFacing(facing) || [];
+      const current = cams.find((c) => c.deviceId === window.CameraCtl.deviceId);
+      if (current && cams.length > 1) {
+        return facingLabel ? `${facingLabel} · ${current.lensName}` : current.lensName;
+      }
+      return facingLabel ? `${facingLabel} camera` : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** Active capture resolution, straight from the live MediaStreamTrack. */
+  function getResolutionLabel() {
+    try {
+      const track = window.CameraCtl.getVideoTrack();
+      const settings = track && track.getSettings ? track.getSettings() : null;
+      if (settings && settings.width && settings.height) {
+        return `${settings.width}×${settings.height}`;
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  /**
+   * ISO has no standard place in the Media Capture API. A handful of
+   * Chromium builds expose it via getSettings() or the experimental
+   * ImageCapture.getPhotoSettings(); everywhere else this resolves to
+   * null and the line is simply omitted.
+   */
+  async function tryGetIso() {
+    try {
+      const track = window.CameraCtl.getVideoTrack();
+      if (!track) return null;
+      const settings = track.getSettings ? track.getSettings() : {};
+      if (typeof settings.iso === "number") return settings.iso;
+      if (window.ImageCapture) {
+        const capture = new ImageCapture(track);
+        const photoSettings = await capture.getPhotoSettings();
+        if (photoSettings && typeof photoSettings.iso === "number") return photoSettings.iso;
+      }
+    } catch (e) { /* not supported on this device/browser */ }
+    return null;
+  }
+
+  /** Cached weather-location coordinates, if the user opted into weather. */
+  function getLocationLabel() {
+    try {
+      const loc = window.WeatherCtl.getLastKnownLocation();
+      if (loc) return `${loc.lat.toFixed(4)}, ${loc.lon.toFixed(4)}`;
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  /** Captures the current camera view (matching what's on screen) as a JPEG blob. */
+  async function captureSnapshotBlob() {
+    const video = els.video;
+    if (!video.videoWidth) return null;
+
+    const { sx, sy, sw, sh } = getCoverSourceRect(video, CONTAINER_ASPECT);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(sw);
+    canvas.height = Math.round(sh);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+    if (snapshotOverlayEnabled()) {
+      const w = canvas.width, h = canvas.height;
+      const b = window.CalibrationCtl.box;
+      const x0 = b.x0 * w, x1 = b.x1 * w, y0 = b.y0 * h, y1 = b.y1 * h;
+
+      ctx.strokeStyle = "rgba(76,141,255,0.85)";
+      ctx.lineWidth = Math.max(2, w * 0.0035);
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+
+      if (lastTick) {
+        const lineY = y0 + lastTick.rowFrac * (y1 - y0);
+        ctx.strokeStyle = "#ff5b6e";
+        ctx.lineWidth = Math.max(3, w * 0.005);
+        ctx.beginPath();
+        ctx.moveTo(x0, lineY);
+        ctx.lineTo(x1, lineY);
+        ctx.stroke();
+      }
+
+      const pad = w * 0.025;
+
+      // Reading label pill, bottom-left (unchanged from before).
+      const label = lastTick && lastTick.confLevel !== "bad"
+        ? `${lastTick.value.toFixed(1)}°Bx  •  SG ${lastTick.sg.toFixed(3)}`
+        : "No signal";
+      const fontSize = Math.round(w * 0.045);
+      ctx.font = `700 ${fontSize}px -apple-system, sans-serif`;
+      const textW = ctx.measureText(label).width;
+      const boxH = fontSize + pad * 1.4;
+      const readingBoxY = h - boxH - pad * 0.6;
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(pad * 0.6, readingBoxY, textW + pad * 1.6, boxH);
+      ctx.fillStyle = "#fff";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, pad * 1.2, readingBoxY + boxH / 2 + fontSize * 0.05);
+
+      // Small device/camera/location metadata block, stacked just
+      // above the reading pill, bottom-left. Only fields that actually
+      // resolved are included; the rest are silently skipped.
+      const [deviceLabel, iso] = await Promise.all([resolveDeviceLabel(), tryGetIso()]);
+      const resLabel = getResolutionLabel();
+      const lensLabel = getLensLabel();
+      const locLabel = getLocationLabel();
+
+      const metaLines = [];
+      if (deviceLabel) metaLines.push(deviceLabel);
+      const camLine = [resLabel, lensLabel].filter(Boolean).join(" · ");
+      if (camLine) metaLines.push(camLine);
+      if (typeof iso === "number") metaLines.push(`ISO ${iso}`);
+      if (locLabel) metaLines.push(locLabel);
+
+      if (metaLines.length) {
+        const metaFontSize = Math.max(9, Math.round(w * 0.022));
+        const lineH = metaFontSize * 1.35;
+        ctx.font = `500 ${metaFontSize}px -apple-system, sans-serif`;
+        const metaW = Math.max(...metaLines.map((l) => ctx.measureText(l).width));
+        const metaBoxH = metaLines.length * lineH + pad * 0.6;
+        const metaBoxY = readingBoxY - metaBoxH - pad * 0.35;
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(pad * 0.6, metaBoxY, metaW + pad * 1.6, metaBoxH);
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.textBaseline = "middle";
+        metaLines.forEach((line, i) => {
+          ctx.fillText(line, pad * 1.2, metaBoxY + pad * 0.3 + lineH * (i + 0.5));
+        });
+      }
+
+      const ts = new Date().toLocaleString();
+      ctx.font = `500 ${Math.round(fontSize * 0.55)}px -apple-system, sans-serif`;
+      ctx.textAlign = "right";
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.shadowColor = "rgba(0,0,0,0.8)";
+      ctx.shadowBlur = 4;
+      ctx.fillText(ts, w - pad, h - pad);
+      ctx.shadowBlur = 0;
+      ctx.textAlign = "left";
+    }
+
+    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.92));
+  }
+
+  function flashSnapshotButton() {
+    els.btnSnapshot.classList.add("flash");
+    setTimeout(() => els.btnSnapshot.classList.remove("flash"), 450);
+  }
+
+  async function handleSnapshot() {
+    if (els.btnSnapshot.disabled) return;
+    els.btnSnapshot.disabled = true;
+    try {
+      const blob = await captureSnapshotBlob();
+      if (!blob) return;
+      const filename = `refractoscope-${new Date().toISOString().replace(/[:.]/g, "-")}.jpg`;
+
+      let saved = false;
+      if (navigator.canShare && window.File) {
+        try {
+          const file = new File([blob], filename, { type: "image/jpeg" });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: "refractoScope reading" });
+            saved = true;
+          }
+        } catch (err) {
+          // User cancelling the native share sheet is not a failure.
+          saved = err && err.name === "AbortError";
+        }
+      }
+      if (!saved) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }
+      flashSnapshotButton();
+    } finally {
+      els.btnSnapshot.disabled = !cameraReady;
+    }
+  }
+
+  function settingsSnapshotStatusText() {
+    if (!document.createElement("canvas").toBlob) return "Not supported by this browser";
+    if (!cameraReady) return "Start the camera first";
+    if (navigator.canShare) return "Ready — opens your device's share sheet to save to Photos/Files";
+    return "Ready — downloads directly to this device";
+  }
+
+  els.btnSnapshot.addEventListener("click", handleSnapshot);
+  els.toggleSnapshotOverlay.addEventListener("change", () => {
+    setSnapshotOverlayEnabled(els.toggleSnapshotOverlay.checked);
+  });
 
   // ---------- Detection loop (runs continuously at low rate) ----------
   const TICK_MS = 350;
@@ -360,7 +826,9 @@
 
   els.btnSwitchCamera.addEventListener("click", async () => {
     await window.CameraCtl.switchFacing();
+    smoother.reset();
     setupTorchButton();
+    refreshLensUI();
   });
 
   els.toggleWakelock.addEventListener("change", () => {
@@ -390,6 +858,10 @@
     }[state] || "Unknown";
     els.settingsPermissionStatus.textContent = label;
     updateCalStatusText();
+    refreshLensUI();
+    els.settingsLevelStatus.textContent = settingsLevelStatusText();
+    updateWeatherSettingsUI();
+    els.settingsSnapshotStatus.textContent = settingsSnapshotStatusText();
 
     if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
       els.settingsOfflineStatus.textContent = "Ready — app works offline";
@@ -407,6 +879,20 @@
   async function boot() {
     window.CalibrationCtl.load();
     window.CalibrationCtl.attach(els.calCanvas);
+    els.toggleSnapshotOverlay.checked = snapshotOverlayEnabled();
+
+    // Level: no-op prompt needed on Android/desktop, starts reading
+    // immediately. On iOS it stays inactive until the widget/Settings
+    // button is tapped (a user gesture is required to ask permission).
+    window.LevelCtl.autoStart();
+    els.levelWidget.title = levelTooltip();
+    startLevelLoop();
+
+    // Weather: only runs automatically if the user previously opted in;
+    // otherwise it stays off until enabled from Settings.
+    if (window.WeatherCtl.isEnabled()) {
+      window.WeatherCtl.refresh().then(updateWeatherChip);
+    }
 
     if ("serviceWorker" in navigator) {
       try {
