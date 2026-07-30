@@ -65,8 +65,34 @@
 
   const smoother = window.Detector.createSmoother({ alpha: 0.25, jumpThreshold: 3.5 });
 
+  /**
+   * Smooths the live-detected scope x-bounds (see "Horizontal
+   * auto-centering" in runTick): fast-snaps to a big jump (the user
+   * deliberately repositioned), slow-smooths small jitter (hand
+   * vibration), and holds its last good value across a transient
+   * failed detection rather than springing back to the static box.
+   */
+  function createXTracker(alpha, jumpThreshold) {
+    let x0 = null, x1 = null;
+    return {
+      reset() { x0 = null; x1 = null; },
+      hasValue() { return x0 !== null; },
+      get() { return { x0, x1 }; },
+      push(nx0, nx1) {
+        if (x0 === null || Math.abs(nx0 - x0) > jumpThreshold || Math.abs(nx1 - x1) > jumpThreshold) {
+          x0 = nx0; x1 = nx1;
+        } else {
+          x0 = x0 + alpha * (nx0 - x0);
+          x1 = x1 + alpha * (nx1 - x1);
+        }
+        return { x0, x1 };
+      },
+    };
+  }
+  const dynamicXTracker = createXTracker(0.3, 0.08);
+
   let activeScreen = "screen-live";
-  let lastTick = null; // { rowFrac, contrast, value, sg, confidence }
+  let lastTick = null; // { frameRowFrac, activeX0, activeX1, contrast, value, sg, confidence }
   let calRafId = null;
   let cameraReady = false;
 
@@ -342,6 +368,7 @@
     const result = await window.CameraCtl.startWithDeviceId(els.video, deviceId);
     if (result.ok) {
       smoother.reset();
+      dynamicXTracker.reset();
       setupTorchButton();
       refreshLensUI();
     } else {
@@ -511,20 +538,25 @@
 
     if (snapshotOverlayEnabled()) {
       const w = canvas.width, h = canvas.height;
+      // Fractional coordinates are portable between the analysis
+      // canvas and this full-res snapshot canvas since both use the
+      // same cover-fit crop (CONTAINER_ASPECT).
       const b = window.CalibrationCtl.box;
-      const x0 = b.x0 * w, x1 = b.x1 * w, y0 = b.y0 * h, y1 = b.y1 * h;
+      const gx0 = (lastTick ? lastTick.activeX0 : b.x0) * w;
+      const gx1 = (lastTick ? lastTick.activeX1 : b.x1) * w;
+      const y0 = b.y0 * h, y1 = b.y1 * h;
 
       ctx.strokeStyle = "rgba(76,141,255,0.85)";
       ctx.lineWidth = Math.max(2, w * 0.0035);
-      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.strokeRect(gx0, y0, gx1 - gx0, y1 - y0);
 
       if (lastTick) {
-        const lineY = y0 + lastTick.rowFrac * (y1 - y0);
+        const lineY = lastTick.frameRowFrac * h;
         ctx.strokeStyle = "#ff5b6e";
         ctx.lineWidth = Math.max(3, w * 0.005);
         ctx.beginPath();
-        ctx.moveTo(x0, lineY);
-        ctx.lineTo(x1, lineY);
+        ctx.moveTo(gx0, lineY);
+        ctx.lineTo(gx1, lineY);
         ctx.stroke();
       }
 
@@ -666,19 +698,61 @@
       return; // canvas tainted or not ready
     }
 
-    const box = window.CalibrationCtl.box;
-    const result = window.Detector.analyzeFrame(imageData, ANALYSIS_WIDTH, ANALYSIS_HEIGHT, box);
+    const refBox = window.CalibrationCtl.box; // the user-calibrated reference (unbuffered, static x)
+    const bufferedY = window.CalibrationCtl.getBufferedY(); // padded sampling window, mostly downward
+
+    // ---- Horizontal auto-centering ----
+    // Only active on the Live screen: while the user is on the
+    // Calibrate screen actively dragging refBox, the detection window
+    // must track exactly what they're dragging, not a live-detected
+    // position, or the preview line would stop matching the box.
+    let activeX0 = refBox.x0;
+    let activeX1 = refBox.x1;
+    if (activeScreen === "screen-live" && window.CalibrationCtl.dynamicX) {
+      const y0px = Math.round(refBox.y0 * ANALYSIS_HEIGHT);
+      const y1px = Math.round(refBox.y1 * ANALYSIS_HEIGHT);
+      const bounds = window.Detector.detectHorizontalBounds(imageData, ANALYSIS_WIDTH, ANALYSIS_HEIGHT, y0px, y1px);
+      if (bounds.ok) {
+        const span = bounds.rightFrac - bounds.leftFrac;
+        const rel = window.CalibrationCtl.dynamicX;
+        const smoothed = dynamicXTracker.push(
+          bounds.leftFrac + rel.relX0 * span,
+          bounds.leftFrac + rel.relX1 * span
+        );
+        activeX0 = smoothed.x0;
+        activeX1 = smoothed.x1;
+      } else if (dynamicXTracker.hasValue()) {
+        // Transient bad frame (motion blur, hand briefly off-target) -
+        // hold the last good position rather than snapping back.
+        const held = dynamicXTracker.get();
+        activeX0 = held.x0;
+        activeX1 = held.x1;
+      }
+      // else: no good detection yet this session - fall back to the
+      // static refBox x-bounds already assigned above.
+    }
+
+    const detectBox = { x0: activeX0, x1: activeX1, y0: bufferedY.y0, y1: bufferedY.y1 };
+    const result = window.Detector.analyzeFrame(imageData, ANALYSIS_WIDTH, ANALYSIS_HEIGHT, detectBox);
     if (!result.ok) return;
 
+    // Value mapping always uses the original (unbuffered) reference
+    // box's y-span, so a transition found inside the buffer zone
+    // correctly extrapolates to a value at/near the low end instead
+    // of being clipped at it.
     const { top, bottom } = window.CalibrationCtl.values;
-    const rawValue = window.Detector.rowFracToValue(result.rowFrac, top, bottom);
+    const refSpan = refBox.y1 - refBox.y0;
+    const refRowFrac = refSpan > 0.0001 ? (result.frameRowFrac - refBox.y0) / refSpan : 0.5;
+    const rawValue = window.Detector.rowFracToValue(refRowFrac, top, bottom);
     const conf = classifyConfidence(result.contrast);
     const confNum = conf.level === "good" ? 1 : conf.level === "warn" ? 0.5 : 0;
 
     const smoothed = smoother.push(rawValue, confNum);
 
     lastTick = {
-      rowFrac: result.rowFrac,
+      frameRowFrac: result.frameRowFrac,
+      activeX0,
+      activeX1,
       contrast: result.contrast,
       rawValue,
       value: smoothed.value,
@@ -717,15 +791,22 @@
     const { ctx, cssW, cssH } = resizeCanvasToContainer(els.overlay);
     ctx.clearRect(0, 0, cssW, cssH);
 
+    // The box's x-bounds follow the live-detected scope position (see
+    // runTick's horizontal auto-centering) when available, so this
+    // guide box visibly tracks minor hand movement; y-bounds stay at
+    // the static calibrated reference.
     const b = window.CalibrationCtl.box;
-    const x0 = b.x0 * cssW, x1 = b.x1 * cssW;
+    const x0 = lastTick.activeX0 * cssW, x1 = lastTick.activeX1 * cssW;
     const y0 = b.y0 * cssH, y1 = b.y1 * cssH;
 
     ctx.strokeStyle = "rgba(76,141,255,0.55)";
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
 
-    const lineY = y0 + lastTick.rowFrac * (y1 - y0);
+    // Absolute frame position - may legitimately land outside the box
+    // (below it) when the reading is near the low end of the scale,
+    // inside the buffer zone.
+    const lineY = lastTick.frameRowFrac * cssH;
     ctx.strokeStyle = lastTick.confLevel === "bad" ? "rgba(255,91,110,0.9)" : "#ff5b6e";
     ctx.lineWidth = 2.5;
     ctx.beginPath();
@@ -761,10 +842,12 @@
       window.CalibrationCtl.drawOverlay(ctx, cssW, cssH);
 
       if (lastTick) {
-        const b = window.CalibrationCtl.box;
-        const y0 = b.y0 * cssH, y1 = b.y1 * cssH;
-        const x0 = b.x0 * cssW, x1 = b.x1 * cssW;
-        const lineY = y0 + lastTick.rowFrac * (y1 - y0);
+        // Detection window x-bounds stay static (equal to the box
+        // being dragged) while on this screen - see runTick. Line
+        // position is absolute and may fall within the dashed buffer
+        // zone below the box for a low reading.
+        const x0 = lastTick.activeX0 * cssW, x1 = lastTick.activeX1 * cssW;
+        const lineY = lastTick.frameRowFrac * cssH;
         ctx.strokeStyle = "#ff5b6e";
         ctx.lineWidth = 2;
         ctx.setLineDash([6, 4]);
@@ -800,18 +883,60 @@
 
   els.btnCalCancel.addEventListener("click", () => {
     window.CalibrationCtl.load(); // discard unsaved edits, revert to last saved (or defaults)
+    dynamicXTracker.reset();
     switchScreen("screen-live");
   });
+
+  /**
+   * Establishes the horizontal auto-centering reference: detects the
+   * scope's left/right edges at exactly the box the user just
+   * calibrated, then stores the box's x-bounds as fractions relative
+   * to that scope width. If detection isn't confident right now (e.g.
+   * poor lighting), dynamicX is cleared and the box simply stays
+   * static - never a hard requirement for calibration to work.
+   */
+  function establishDynamicXReference() {
+    const box = window.CalibrationCtl.box;
+    try {
+      if (els.video.videoWidth && drawVideoCover(analysisCtx, els.video, ANALYSIS_WIDTH, ANALYSIS_HEIGHT)) {
+        const imageData = analysisCtx.getImageData(0, 0, ANALYSIS_WIDTH, ANALYSIS_HEIGHT);
+        const y0px = Math.round(box.y0 * ANALYSIS_HEIGHT);
+        const y1px = Math.round(box.y1 * ANALYSIS_HEIGHT);
+        const bounds = window.Detector.detectHorizontalBounds(imageData, ANALYSIS_WIDTH, ANALYSIS_HEIGHT, y0px, y1px);
+        if (bounds.ok) {
+          const span = bounds.rightFrac - bounds.leftFrac;
+          window.CalibrationCtl.dynamicX = {
+            relX0: (box.x0 - bounds.leftFrac) / span,
+            relX1: (box.x1 - bounds.leftFrac) / span,
+          };
+        } else {
+          window.CalibrationCtl.dynamicX = null;
+        }
+      } else {
+        window.CalibrationCtl.dynamicX = null;
+      }
+    } catch (e) {
+      window.CalibrationCtl.dynamicX = null;
+    }
+    dynamicXTracker.reset();
+  }
+
   els.btnCalSave.addEventListener("click", () => {
+    establishDynamicXReference();
     window.CalibrationCtl.save();
     smoother.reset();
     switchScreen("screen-live");
   });
 
   function updateCalStatusText() {
-    els.settingsCalStatus.textContent = window.CalibrationCtl.isCalibrated()
-      ? `Calibrated (${window.CalibrationCtl.values.bottom}–${window.CalibrationCtl.values.top} °Bx)`
-      : "Not calibrated — using defaults";
+    if (!window.CalibrationCtl.isCalibrated()) {
+      els.settingsCalStatus.textContent = "Not calibrated — using defaults";
+      return;
+    }
+    const range = `Calibrated (${window.CalibrationCtl.values.bottom}–${window.CalibrationCtl.values.top} °Bx)`;
+    els.settingsCalStatus.textContent = window.CalibrationCtl.dynamicX
+      ? `${range} · auto-centering on`
+      : `${range} · auto-centering unavailable (recalibrate in brighter contrast)`;
   }
 
   // ---------- Settings screen ----------
@@ -827,6 +952,7 @@
   els.btnSwitchCamera.addEventListener("click", async () => {
     await window.CameraCtl.switchFacing();
     smoother.reset();
+    dynamicXTracker.reset();
     setupTorchButton();
     refreshLensUI();
   });
@@ -843,6 +969,7 @@
   els.btnResetCal.addEventListener("click", () => {
     window.CalibrationCtl.reset();
     smoother.reset();
+    dynamicXTracker.reset();
     updateCalStatusText();
   });
 

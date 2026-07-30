@@ -6,6 +6,19 @@
  * valid across different camera resolutions/orientations, persisted
  * to localStorage for offline reuse across sessions.
  *
+ * Two derived pieces of state extend the raw dragged box:
+ *  - getBufferedY(): pads the box vertically (mostly downward, into
+ *    the label area below the "0" tick) so the detector always has
+ *    contrasting bright rows on both sides of the transition, even
+ *    when the true reading sits right at the low end of the scale.
+ *    The box itself stays the source of truth for value mapping -
+ *    only the *sampling* window is padded.
+ *  - dynamicX: relative-to-scope-width x-bounds captured at save
+ *    time (see app.js), letting the live detection window re-center
+ *    horizontally each frame against the scope's own left/right dark
+ *    edges rather than a fixed frame position - tolerating minor
+ *    hand vibration/drift without needing the user to hold still.
+ *
  * Exposes a single global: window.CalibrationCtl
  */
 (function () {
@@ -16,9 +29,18 @@
   const DEFAULT_BOX = { x0: 0.40, y0: 0.22, x1: 0.60, y1: 0.80 };
   const DEFAULT_VALUES = { top: 30, bottom: 0 };
 
+  // Vertical padding applied to the *sampling* window only, as a
+  // fraction of the calibrated box's own height. Larger below than
+  // above: the region under the "0" tick runs into printed labels
+  // fairly soon, while there's normally plenty of dark scale above
+  // the top tick already.
+  const BUFFER_TOP_FRAC = 0.06;
+  const BUFFER_BOTTOM_FRAC = 0.22;
+
   const CalibrationCtl = {
     box: Object.assign({}, DEFAULT_BOX),
     values: Object.assign({}, DEFAULT_VALUES),
+    dynamicX: null, // { relX0, relX1 } relative-to-scope-width x-bounds, or null
     canvas: null,
     ctx: null,
     activeHandle: null,
@@ -32,6 +54,7 @@
           if (parsed && parsed.box && parsed.values) {
             this.box = parsed.box;
             this.values = parsed.values;
+            this.dynamicX = parsed.dynamicX || null;
             return true;
           }
         }
@@ -41,13 +64,17 @@
 
     save() {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ box: this.box, values: this.values }));
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ box: this.box, values: this.values, dynamicX: this.dynamicX })
+        );
       } catch (e) { /* storage may be unavailable (private mode) - non-fatal */ }
     },
 
     reset() {
       this.box = Object.assign({}, DEFAULT_BOX);
       this.values = Object.assign({}, DEFAULT_VALUES);
+      this.dynamicX = null;
       try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
     },
 
@@ -55,6 +82,15 @@
       try {
         return localStorage.getItem(STORAGE_KEY) !== null;
       } catch (e) { return false; }
+    },
+
+    /** The actual detection sampling window: the box, padded vertically. */
+    getBufferedY() {
+      const span = Math.max(0.001, this.box.y1 - this.box.y0);
+      return {
+        y0: Math.max(0, this.box.y0 - span * BUFFER_TOP_FRAC),
+        y1: Math.min(1, this.box.y1 + span * BUFFER_BOTTOM_FRAC),
+      };
     },
 
     /**
@@ -144,15 +180,28 @@
       const x0 = b.x0 * cssW, x1 = b.x1 * cssW;
       const y0 = b.y0 * cssH, y1 = b.y1 * cssH;
 
-      ctx.save();
-      // dim outside box
-      ctx.fillStyle = "rgba(0,0,0,0.45)";
-      ctx.fillRect(0, 0, cssW, y0);
-      ctx.fillRect(0, y1, cssW, cssH - y1);
-      ctx.fillRect(0, y0, x0, y1 - y0);
-      ctx.fillRect(x1, y0, cssW - x1, y1 - y0);
+      const buf = this.getBufferedY();
+      const by0 = buf.y0 * cssH, by1 = buf.y1 * cssH;
 
-      // box outline
+      ctx.save();
+      // dim everything outside the padded detection window (the box
+      // itself sits inside this, so it stays lit too)
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillRect(0, 0, cssW, by0);
+      ctx.fillRect(0, by1, cssW, cssH - by1);
+      ctx.fillRect(0, by0, x0, by1 - by0);
+      ctx.fillRect(x1, by0, cssW - x1, by1 - by0);
+
+      // padded detection window - dashed, muted (shows the buffer
+      // added below the "0" tick so a low reading still has enough
+      // contrasting rows to detect)
+      ctx.strokeStyle = "rgba(127,176,255,0.5)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.strokeRect(x0, by0, x1 - x0, by1 - by0);
+      ctx.setLineDash([]);
+
+      // box outline (the calibrated reference - what the handles below drag)
       ctx.strokeStyle = "#4c8dff";
       ctx.lineWidth = 2;
       ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);

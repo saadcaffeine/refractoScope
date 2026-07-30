@@ -4,9 +4,11 @@ A camera-based Brix% reader for analog optical refractometers (the kind with a b
 
 ## How it works
 
-- **Detection**: for each frame, a vertical strip is sampled inside a calibrated region of the image. refractoScope measures brightness row by row, smooths it, and finds the row with the sharpest brightness change — that's the blue/bright interface line. This works whether the transition is a crisp edge or a soft gradient (validated against 10 real refractometer photos).
+- **Detection**: for each frame, a vertical strip is sampled inside a detection window, and refractoScope measures brightness row by row, smooths it, and finds the row with the sharpest brightness change — that's the blue/bright interface line. This works whether the transition is a crisp edge or a soft gradient (validated against real refractometer photos).
 - **Calibration**: because every phone/scope/zoom combination frames the scale differently, you do a one-time calibration: drag a box's handles onto two known tick marks on the scale (e.g. the "30" and "0" Brix ticks) and confirm their values. This is saved on-device and reused on future visits.
-- **No OpenCV/WASM**: detection is plain Canvas `ImageData` math (~150 lines), which keeps the whole app under 50KB and trivially cacheable for offline use — no multi-megabyte CV library to download or bundle.
+- **Buffer zone below the low tick**: the box you calibrate is the *value reference*, but the actual sampling window is padded automatically — mostly downward, into the label area below the "0" tick — so a reading near the low end of the scale still has bright rows on both sides of the transition to detect against. Without this, a true reading right at (or just past) your calibrated "0" position can fall outside the sampled area entirely and simply fail to register. The calibration screen shows this padded area as a dashed outline around your solid calibration box.
+- **Horizontal auto-centering**: at the moment you save a calibration, refractoScope also detects the scope's left/right edges (the sharp dark-vignette-to-bright-interior boundary) and stores your box's x-bounds as fractions relative to that scope width instead of a fixed frame position. On the Live tab, it re-detects those edges every frame and re-centers the detection window to match — so minor hand vibration or drift doesn't require you to hold the phone perfectly still. This is confidence-gated: if the edges can't be found reliably in a given frame (e.g. poor contrast), it holds the last known-good position rather than guessing.
+- **No OpenCV/WASM**: detection is plain Canvas `ImageData` math, which keeps the whole app lightweight and trivially cacheable for offline use — no multi-megabyte CV library to download or bundle.
 
 ## Requirements this app meets
 
@@ -49,8 +51,8 @@ Open `http://localhost:8080` in a desktop browser to sanity-check the UI (camera
 
 1. Open the app, tap **Enable camera**, allow access.
 2. Point the camera at the refractometer eyepiece so the scale fills the frame (steady, well-lit).
-3. Go to the **Calibrate** tab. Drag the box's top/bottom handles onto two ticks you can clearly see (defaults to 30 and 0), narrow the left/right handles so the box sits just around the tick marks (not the printed numbers), and set the corresponding values in the two fields.
-4. Tap **Save calibration**. Back on the **Live** tab, the Brix% reading updates automatically as you swap samples under the scope — no need to re-calibrate unless you change how you're holding the phone.
+3. Go to the **Calibrate** tab. Drag the box's top/bottom handles onto two ticks you can clearly see (defaults to 30 and 0), narrow the left/right handles so the box sits just around the tick marks (not the printed numbers), and set the corresponding values in the two fields. The dashed outline around the box is the padded area actually sampled — that's expected, not a mistake.
+4. Tap **Save calibration**. Back on the **Live** tab, the Brix% reading updates automatically as you swap samples under the scope, and the guide box will visibly shift a little to track minor hand movement — no need to re-calibrate unless you change how you're holding the phone or switch lenses.
 
 ## Files
 
