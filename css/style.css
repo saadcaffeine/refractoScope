@@ -205,6 +205,27 @@ body {
 }
 .torch-btn.active { background: rgba(242,181,68,0.85); color: #201400; }
 
+.tare-btn {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 8px 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+.tare-btn svg { width: 18px; height: 18px; fill: none; }
+.tare-btn:active:not(:disabled) { transform: scale(0.95); }
+.tare-btn:disabled { opacity: 0.45; }
+.tare-btn.flash { background: rgba(53,211,138,0.85); border-color: rgba(53,211,138,0.9); color: #06210f; }
+
 .readout {
   display: flex;
   align-items: center;

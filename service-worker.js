@@ -6,7 +6,7 @@
  * there are no external CDN dependencies to worry about.
  */
 
-const CACHE_VERSION = "v6"; // bump whenever cached app files change, so installed/offline copies update
+const CACHE_VERSION = "v7"; // bump whenever cached app files change, so installed/offline copies update
 const CACHE_NAME = "refractoscope-" + CACHE_VERSION;
 
 const PRECACHE_URLS = [

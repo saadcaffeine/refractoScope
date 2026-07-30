@@ -64,6 +64,10 @@
         <canvas id="overlay"></canvas>
         <div id="offline-badge" class="badge hidden">Offline</div>
         <div id="stability-badge" class="badge badge-stability hidden">Stabilizing&hellip;</div>
+        <button id="btn-tare" class="tare-btn" title="Tare: load a 0% sample (e.g. distilled water), then tap to set 0" aria-label="Tare / set zero" disabled>
+          <svg viewBox="0 0 24 24"><path d="M12 3v4M7 5.5l1.8 3.1M17 5.5l-1.8 3.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="14" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 10.5v4l2.8 1.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Tare</span>
+        </button>
         <button id="btn-torch" class="icon-btn torch-btn hidden" title="Toggle flashlight" aria-label="Toggle flashlight">
           <svg viewBox="0 0 24 24"><path d="M9 2h6l-1 7h3l-8 13 1.5-9H7z"/></svg>
         </button>
@@ -83,7 +87,7 @@
         </div>
       </div>
 
-      <div class="hint" id="live-hint">Align the scale with the guide box, then tap <strong>Calibrate</strong> once to teach refractoScope your scale.</div>
+      <div class="hint" id="live-hint">Align the scale with the guide box, then tap <strong>Calibrate</strong> once to teach refractoScope your scale. For the most accurate zero, load a 0% sample (e.g. distilled water) and tap <strong>Tare</strong>.</div>
     </section>
 
     <!-- Calibration -->
@@ -143,6 +147,14 @@
             <div class="settings-sub" id="settings-cal-status">Not calibrated</div>
           </div>
           <button id="btn-settings-calibrate" class="btn-secondary">Calibrate</button>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">Zero point (Tare)</div>
+            <div class="settings-sub" id="settings-tare-status">Not tared — using the calibrated 0 position</div>
+          </div>
+          <button id="btn-clear-tare" class="btn-secondary">Clear</button>
         </div>
 
         <div class="settings-row">

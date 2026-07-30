@@ -6,13 +6,22 @@
  * valid across different camera resolutions/orientations, persisted
  * to localStorage for offline reuse across sessions.
  *
- * Two derived pieces of state extend the raw dragged box:
+ * Three derived pieces of state extend the raw dragged box:
  *  - getBufferedY(): pads the box vertically (mostly downward, into
  *    the label area below the "0" tick) so the detector always has
  *    contrasting bright rows on both sides of the transition, even
  *    when the true reading sits right at the low end of the scale.
- *    The box itself stays the source of truth for value mapping -
- *    only the *sampling* window is padded.
+ *    This is a coarse safety margin only, sized to *not* reach the
+ *    scope's own curved physical edge below the label - see
+ *    zeroRowFrac for the precise version.
+ *  - zeroRowFrac: an independently-set, precisely measured "true
+ *    zero" row position, captured via the live Tare button (dunk a
+ *    known 0% sample - e.g. distilled water - and tap Tare). This
+ *    decouples "exactly where is 0" (a physical measurement) from
+ *    "roughly where did I drag the box" (a by-eye span/window
+ *    calibration) - the box still defines search area and the top
+ *    reference tick, but value mapping anchors to zeroRowFrac
+ *    whenever it's set, falling back to the dragged box.y1 otherwise.
  *  - dynamicX: relative-to-scope-width x-bounds captured at save
  *    time (see app.js), letting the live detection window re-center
  *    horizontally each frame against the scope's own left/right dark
@@ -33,14 +42,21 @@
   // fraction of the calibrated box's own height. Larger below than
   // above: the region under the "0" tick runs into printed labels
   // fairly soon, while there's normally plenty of dark scale above
-  // the top tick already.
-  const BUFFER_TOP_FRAC = 0.06;
-  const BUFFER_BOTTOM_FRAC = 0.22;
+  // the top tick already. Kept modest so it doesn't reach far enough
+  // to catch the scope's own curved physical edge - a precise Tare
+  // (see zeroRowFrac) is the recommended way to get right up to a
+  // true low reading without relying on this margin at all.
+  const BUFFER_TOP_FRAC = 0.05;
+  const BUFFER_BOTTOM_FRAC = 0.12;
+  // Once tared, only a small margin past the exact measured zero is
+  // needed - we're no longer compensating for by-eye drag imprecision.
+  const TARE_MARGIN_FRAC = 0.05;
 
   const CalibrationCtl = {
     box: Object.assign({}, DEFAULT_BOX),
     values: Object.assign({}, DEFAULT_VALUES),
     dynamicX: null, // { relX0, relX1 } relative-to-scope-width x-bounds, or null
+    zeroRowFrac: null, // Tare-captured absolute frame-row-fraction for value=bottom, or null
     canvas: null,
     ctx: null,
     activeHandle: null,
@@ -55,6 +71,7 @@
             this.box = parsed.box;
             this.values = parsed.values;
             this.dynamicX = parsed.dynamicX || null;
+            this.zeroRowFrac = typeof parsed.zeroRowFrac === "number" ? parsed.zeroRowFrac : null;
             return true;
           }
         }
@@ -66,7 +83,7 @@
       try {
         localStorage.setItem(
           STORAGE_KEY,
-          JSON.stringify({ box: this.box, values: this.values, dynamicX: this.dynamicX })
+          JSON.stringify({ box: this.box, values: this.values, dynamicX: this.dynamicX, zeroRowFrac: this.zeroRowFrac })
         );
       } catch (e) { /* storage may be unavailable (private mode) - non-fatal */ }
     },
@@ -75,6 +92,7 @@
       this.box = Object.assign({}, DEFAULT_BOX);
       this.values = Object.assign({}, DEFAULT_VALUES);
       this.dynamicX = null;
+      this.zeroRowFrac = null;
       try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
     },
 
@@ -84,13 +102,28 @@
       } catch (e) { return false; }
     },
 
+    isTared() {
+      return this.zeroRowFrac != null;
+    },
+
+    /** Effective absolute frame-row-fraction anchor for value=bottom (usually 0). */
+    getZeroAnchor() {
+      return this.zeroRowFrac != null ? this.zeroRowFrac : this.box.y1;
+    },
+
     /** The actual detection sampling window: the box, padded vertically. */
     getBufferedY() {
       const span = Math.max(0.001, this.box.y1 - this.box.y0);
-      return {
-        y0: Math.max(0, this.box.y0 - span * BUFFER_TOP_FRAC),
-        y1: Math.min(1, this.box.y1 + span * BUFFER_BOTTOM_FRAC),
-      };
+      const y0 = Math.max(0, this.box.y0 - span * BUFFER_TOP_FRAC);
+      let y1;
+      if (this.zeroRowFrac != null) {
+        // Trust the precise Tare measurement: cover it plus a small
+        // margin, whichever extends further than the dragged box.
+        y1 = Math.max(this.box.y1, this.zeroRowFrac) + span * TARE_MARGIN_FRAC;
+      } else {
+        y1 = this.box.y1 + span * BUFFER_BOTTOM_FRAC;
+      }
+      return { y0, y1: Math.min(1, y1) };
     },
 
     /**
@@ -205,6 +238,24 @@
       ctx.strokeStyle = "#4c8dff";
       ctx.lineWidth = 2;
       ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+
+      // Tared zero line, if set - the authoritative value=bottom anchor,
+      // which may sit above or below the dragged bottom edge.
+      if (this.zeroRowFrac != null) {
+        const zy = this.zeroRowFrac * cssH;
+        ctx.strokeStyle = "#35d38a";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x0, zy);
+        ctx.lineTo(x1, zy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#35d38a";
+        ctx.font = "600 12px -apple-system, sans-serif";
+        ctx.textBaseline = "middle";
+        ctx.fillText("tared 0", x1 + 6, zy);
+      }
 
       // sample-strip guide (matches detector.js stripWidthFrac default)
       const stripPad = (x1 - x0) * 0.3;

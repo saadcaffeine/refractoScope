@@ -31,6 +31,9 @@
     btnSnapshot: $("btn-snapshot"),
     settingsSnapshotStatus: $("settings-snapshot-status"),
     toggleSnapshotOverlay: $("toggle-snapshot-overlay"),
+    btnTare: $("btn-tare"),
+    settingsTareStatus: $("settings-tare-status"),
+    btnClearTare: $("btn-clear-tare"),
     confidenceDot: $("confidence-dot"),
     confidenceLabel: $("confidence-label"),
     offlineBadge: $("offline-badge"),
@@ -676,6 +679,34 @@
     setSnapshotOverlayEnabled(els.toggleSnapshotOverlay.checked);
   });
 
+  // ---------- Tare (set 0 against a known 0% sample) ----------
+  function flashTareButton() {
+    els.btnTare.classList.add("flash");
+    setTimeout(() => els.btnTare.classList.remove("flash"), 450);
+  }
+
+  function updateTareStatusText() {
+    els.settingsTareStatus.textContent = window.CalibrationCtl.isTared()
+      ? "Tared — using the measured 0 position"
+      : "Not tared — using the calibrated 0 position";
+  }
+
+  els.btnTare.addEventListener("click", () => {
+    if (!lastTick || lastTick.confLevel === "bad") return;
+    window.CalibrationCtl.zeroRowFrac = lastTick.frameRowFrac;
+    window.CalibrationCtl.save();
+    smoother.reset();
+    flashTareButton();
+    updateTareStatusText();
+  });
+
+  els.btnClearTare.addEventListener("click", () => {
+    window.CalibrationCtl.zeroRowFrac = null;
+    window.CalibrationCtl.save();
+    smoother.reset();
+    updateTareStatusText();
+  });
+
   // ---------- Detection loop (runs continuously at low rate) ----------
   const TICK_MS = 350;
   let tickTimer = null;
@@ -736,13 +767,16 @@
     const result = window.Detector.analyzeFrame(imageData, ANALYSIS_WIDTH, ANALYSIS_HEIGHT, detectBox);
     if (!result.ok) return;
 
-    // Value mapping always uses the original (unbuffered) reference
-    // box's y-span, so a transition found inside the buffer zone
-    // correctly extrapolates to a value at/near the low end instead
-    // of being clipped at it.
+    // Value mapping anchors "bottom" (usually 0) to the Tared zero
+    // position when set, otherwise falls back to the dragged box.y1 -
+    // exactly today's behavior. Either way the anchor is independent
+    // of the padded sampling window, so a transition found inside the
+    // buffer zone correctly extrapolates to a value at/near the low
+    // end instead of being clipped at it.
     const { top, bottom } = window.CalibrationCtl.values;
-    const refSpan = refBox.y1 - refBox.y0;
-    const refRowFrac = refSpan > 0.0001 ? (result.frameRowFrac - refBox.y0) / refSpan : 0.5;
+    const zeroAnchor = window.CalibrationCtl.getZeroAnchor();
+    const refSpan = zeroAnchor - refBox.y0;
+    const refRowFrac = Math.abs(refSpan) > 0.0001 ? (result.frameRowFrac - refBox.y0) / refSpan : 0.5;
     const rawValue = window.Detector.rowFracToValue(refRowFrac, top, bottom);
     const conf = classifyConfidence(result.contrast);
     const confNum = conf.level === "good" ? 1 : conf.level === "warn" ? 0.5 : 0;
@@ -803,6 +837,18 @@
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
 
+    if (window.CalibrationCtl.isTared()) {
+      const zy = window.CalibrationCtl.zeroRowFrac * cssH;
+      ctx.strokeStyle = "rgba(53,211,138,0.6)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x0, zy);
+      ctx.lineTo(x1, zy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     // Absolute frame position - may legitimately land outside the box
     // (below it) when the reading is near the low end of the scale,
     // inside the buffer zone.
@@ -827,6 +873,9 @@
     els.stabilityBadge.classList.toggle("hidden", lastTick.confLevel !== "warn");
 
     els.offlineBadge.classList.toggle("hidden", navigator.onLine !== false);
+
+    // Tare only makes sense against a stable, non-noise reading.
+    els.btnTare.disabled = lastTick.confLevel === "bad";
   }
 
   // ---------- Calibration screen rendering ----------
@@ -922,9 +971,13 @@
   }
 
   els.btnCalSave.addEventListener("click", () => {
+    // A new span/window calibration invalidates any prior Tare - the
+    // measured zero position was relative to the OLD box's framing.
+    window.CalibrationCtl.zeroRowFrac = null;
     establishDynamicXReference();
     window.CalibrationCtl.save();
     smoother.reset();
+    updateTareStatusText();
     switchScreen("screen-live");
   });
 
@@ -971,6 +1024,7 @@
     smoother.reset();
     dynamicXTracker.reset();
     updateCalStatusText();
+    updateTareStatusText();
   });
 
   async function refreshSettingsScreen() {
@@ -985,6 +1039,7 @@
     }[state] || "Unknown";
     els.settingsPermissionStatus.textContent = label;
     updateCalStatusText();
+    updateTareStatusText();
     refreshLensUI();
     els.settingsLevelStatus.textContent = settingsLevelStatusText();
     updateWeatherSettingsUI();
