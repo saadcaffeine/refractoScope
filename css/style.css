@@ -330,6 +330,7 @@ body {
 .settings-title { font-size: 0.94rem; font-weight: 600; }
 .settings-sub { font-size: 0.78rem; color: var(--text-dim); margin-top: 2px; }
 .settings-close { margin-top: 18px; }
+.app-version { margin-top: 14px; text-align: center; font-size: 0.72rem; color: var(--text-dim); }
 
 .lens-select {
   background: var(--panel-2);

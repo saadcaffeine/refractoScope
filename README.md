@@ -1,5 +1,7 @@
 # refractoScope
 
+**Version 0.2.0**
+
 A camera-based Salinity% reader for analog optical refractometers (the kind with a blue/dark region over a bright region and a 0-100% scale printed down the middle). Point your phone's camera at the eyepiece and refractoScope tracks the blue/bright interface line live and converts its position to a Salinity% reading — no lab equipment, no network connection, all processing happens on-device.
 
 ## How it works
@@ -73,3 +75,8 @@ js/weather.js          opt-in geolocation + Open-Meteo daily temperature range
 js/app.js             screen wiring, detection loop, rendering
 icons/                app icons
 ```
+
+## Changelog
+
+- **v0.2.0** — Switched the scale from Brix% to Salinity% (0-100 range; new calibration defaults, dropped the Brix-only SG estimate). Added an optional 2× digital zoom (Settings), applied consistently across the live view, calibration, detection, and snapshots. Improved calibration-screen legibility: every alignment line is now dashed and value labels moved off to the right of the box so they no longer sit on top of the scale ticks. Added the Tare button (physically zero against a 0% sample) and a smaller, more precise detection buffer. Added horizontal auto-centering so the detection window tracks minor hand movement.
+- **v0.1.0** — Initial release: live camera Brix% reader with offline PWA support, calibration, front/back + multi-lens camera switching, digital plumb level, opt-in local weather, and snapshot capture with metadata overlay.

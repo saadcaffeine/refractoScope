@@ -1,6 +1,7 @@
 {
   "name": "refractoScope",
   "short_name": "refractoScope",
+  "version": "0.2.0",
   "description": "Live camera reader for optical refractometer Salinity% scales.",
   "start_url": "./index.html",
   "scope": "./",
