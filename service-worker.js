@@ -6,9 +6,17 @@
  * there are no external CDN dependencies to worry about.
  */
 
-const CACHE_VERSION = "v9"; // bump whenever cached app files change, so installed/offline copies update; matches app v0.2.0
+const CACHE_VERSION = "v10"; // bump whenever cached app files change, so installed/offline copies update
 const CACHE_NAME = "refractoscope-" + CACHE_VERSION;
 
+// Core app shell - precached eagerly on install so the app is fully
+// functional offline immediately after first visit. Deliberately does
+// NOT include the heavy Tesseract.js OCR vendor files (core WASM +
+// language data, several MB) - those are optional, only used if the
+// user taps "Auto-detect" on the Calibrate screen, and get cached
+// lazily by the fetch handler below the first time they're actually
+// requested. This keeps initial install fast/light for everyone, while
+// Auto-detect still works fully offline after its first (online) use.
 const PRECACHE_URLS = [
   "./",
   "./index.html",
@@ -18,6 +26,8 @@ const PRECACHE_URLS = [
   "./js/camera.js",
   "./js/detector.js",
   "./js/calibration.js",
+  "./js/autodetect.js",
+  "./js/vendor/tesseract/tesseract.min.js",
   "./js/level.js",
   "./js/weather.js",
   "./icons/icon-192.png",

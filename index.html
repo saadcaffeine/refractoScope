@@ -97,6 +97,12 @@
       </div>
       <div class="cal-panel">
         <p class="cal-instructions">Drag the two handles onto two known tick marks on the scale (e.g. the <strong>100</strong> and <strong>0</strong> Salinity ticks), narrow the box to sit just inside the tick column, then confirm the values below. All the alignment lines are dashed and the value labels sit off to the right of the box, out of the way of the scale itself, so it's easier to see the tick marks underneath while lining things up. The dashed outline shows the padded area actually sampled — it's normal for it to extend below the box so low readings near the bottom tick still detect reliably.</p>
+
+        <div class="autodetect-row">
+          <button id="btn-autodetect" class="btn-secondary">Auto-detect</button>
+          <div class="autodetect-status" id="autodetect-status">Reads the printed 0/100 ticks automatically and fills in the box below — review it before saving. First use downloads ~7MB (one time, then cached for offline use).</div>
+        </div>
+
         <div class="cal-fields">
           <label>Top handle value
             <input id="cal-top-value" type="number" inputmode="decimal" value="100" min="0" max="100" step="0.5">
@@ -229,7 +235,7 @@
         </div>
 
         <button id="btn-close-settings" class="btn-primary settings-close">Done</button>
-        <div class="app-version" id="app-version">refractoScope v0.2.0</div>
+        <div class="app-version" id="app-version">refractoScope v0.3.0</div>
       </div>
     </section>
 
@@ -255,6 +261,8 @@
 <script src="js/camera.js"></script>
 <script src="js/detector.js"></script>
 <script src="js/calibration.js"></script>
+<script src="js/vendor/tesseract/tesseract.min.js"></script>
+<script src="js/autodetect.js"></script>
 <script src="js/level.js"></script>
 <script src="js/weather.js"></script>
 <script src="js/app.js"></script>

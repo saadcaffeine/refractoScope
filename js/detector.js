@@ -31,6 +31,11 @@
  * window horizontally each frame, tolerating minor hand vibration/
  * drift without needing the user to hold perfectly still.
  *
+ * A third pass (detectScopeBody) runs only when the user taps
+ * "Auto-detect" on the Calibrate screen (never per-frame): it finds
+ * the scope's full bounding box with no prior calibration, as Stage 1
+ * of the OCR auto-detect flow (see js/autodetect.js for Stage 2).
+ *
  * Exposes a single global: window.Detector
  */
 (function () {
@@ -66,6 +71,94 @@
       if (profile[i] > hi) hi = profile[i];
     }
     return { lo, hi, contrast: hi - lo };
+  }
+
+  /**
+   * Finds where a profile first rises meaningfully above its own near-
+   * black floor, scanning inward from both ends. Used by
+   * detectScopeBody() to find the scope's true physical edges against
+   * the dark vignette.
+   *
+   * This is deliberately NOT a global-midpoint threshold (i.e. NOT
+   * "lo + (hi-lo)/2"): scanned across the *whole* frame, the printed
+   * scale's own blue-to-white color transition is a bigger swing than
+   * the black-vignette-to-scope-body edge, so a midpoint threshold
+   * locks onto the reading itself instead of the scope's boundary
+   * (confirmed empirically against reference photos). Anchoring the
+   * threshold to a robust low-percentile "floor" instead - a small
+   * amount above true black - finds the real edge reliably.
+   */
+  function findRiseEdges(profile) {
+    const n = profile.length;
+    const sorted = Array.from(profile).sort((a, b) => a - b);
+    const floor = sorted[Math.floor(sorted.length * 0.05)];
+    const ceiling = sorted[sorted.length - 1];
+    const thresh = floor + Math.max(15, (ceiling - floor) * 0.12);
+    let a = 0;
+    for (let i = 0; i < n; i++) { if (profile[i] >= thresh) { a = i; break; } }
+    let b = n - 1;
+    for (let i = n - 1; i >= 0; i--) { if (profile[i] >= thresh) { b = i; break; } }
+    return { a, b, floor, ceiling, thresh, contrast: ceiling - floor };
+  }
+
+  /**
+   * Auto-detect pass (calibration-time only, not per-frame): locates
+   * the illuminated scope body's bounding box against the dark
+   * surrounding vignette, with NO prior calibration - unlike
+   * detectHorizontalBounds (which assumes a roughly-known y-band
+   * already), this scans the *entire* frame in both axes. This is
+   * Stage 1 of the OCR auto-detect flow: a rough geometric box that
+   * gets cropped and handed to OCR, which then finds the precise tick
+   * positions within it (see js/autodetect.js).
+   *
+   * @returns {{ok:boolean, x0:number,x1:number,y0:number,y1:number, contrast:number}} fractional (0-1) box
+   */
+  function detectScopeBody(imageData, frameW, frameH) {
+    const data = imageData.data;
+
+    const stripX0 = Math.round(frameW * 0.35), stripX1 = Math.round(frameW * 0.65);
+    const rowProfile = new Float32Array(frameH);
+    for (let y = 0; y < frameH; y++) {
+      let sum = 0, count = 0;
+      const rowOffset = y * frameW * 4;
+      for (let x = stripX0; x < stripX1; x++) {
+        const idx = rowOffset + x * 4;
+        sum += luminance(data[idx], data[idx + 1], data[idx + 2]);
+        count++;
+      }
+      rowProfile[y] = count > 0 ? sum / count : 0;
+    }
+    const vEdges = findRiseEdges(smoothProfile(rowProfile));
+
+    const bandY0 = Math.round(frameH * 0.45), bandY1 = Math.round(frameH * 0.55);
+    const colProfile = new Float32Array(frameW);
+    for (let x = 0; x < frameW; x++) {
+      let sum = 0, count = 0;
+      for (let y = bandY0; y < bandY1; y++) {
+        const idx = (y * frameW + x) * 4;
+        sum += luminance(data[idx], data[idx + 1], data[idx + 2]);
+        count++;
+      }
+      colProfile[x] = count > 0 ? sum / count : 0;
+    }
+    const hEdges = findRiseEdges(smoothProfile(colProfile));
+
+    const MIN_CONTRAST = 40;
+    if (vEdges.contrast < MIN_CONTRAST || hEdges.contrast < MIN_CONTRAST) {
+      return { ok: false, reason: "low-contrast" };
+    }
+    if (vEdges.b - vEdges.a < frameH * 0.1 || hEdges.b - hEdges.a < frameW * 0.1) {
+      return { ok: false, reason: "region-too-small" };
+    }
+
+    return {
+      ok: true,
+      x0: hEdges.a / frameW,
+      x1: hEdges.b / frameW,
+      y0: vEdges.a / frameH,
+      y1: vEdges.b / frameH,
+      contrast: Math.min(vEdges.contrast, hEdges.contrast),
+    };
   }
 
   /**
@@ -240,6 +333,7 @@
   window.Detector = {
     analyzeFrame,
     detectHorizontalBounds,
+    detectScopeBody,
     rowFracToValue,
     createSmoother,
   };

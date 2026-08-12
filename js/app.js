@@ -40,6 +40,8 @@
     btnTorch: $("btn-torch"),
     calTopValue: $("cal-top-value"),
     calBottomValue: $("cal-bottom-value"),
+    btnAutodetect: $("btn-autodetect"),
+    autodetectStatus: $("autodetect-status"),
     btnCalCancel: $("btn-cal-cancel"),
     btnCalSave: $("btn-cal-save"),
     settingsPermissionStatus: $("settings-permission-status"),
@@ -110,6 +112,8 @@
     if (name === "screen-calibrate") {
       els.calTopValue.value = window.CalibrationCtl.values.top;
       els.calBottomValue.value = window.CalibrationCtl.values.bottom;
+      els.autodetectStatus.textContent = AUTODETECT_DEFAULT_STATUS;
+      els.autodetectStatus.classList.remove("error", "success");
       startCalRenderLoop();
       updateCalStatusText();
     } else {
@@ -978,9 +982,70 @@
     if (!isNaN(v)) window.CalibrationCtl.values.bottom = v;
   });
 
+  // ---------- Auto-detect (OCR-assisted calibration) ----------
+  const AUTODETECT_DEFAULT_STATUS = els.autodetectStatus.textContent;
+
+  const AUTODETECT_REASON_MESSAGES = {
+    "no-video": "Camera isn't ready yet.",
+    "capture-failed": "Couldn't capture a frame — try again.",
+    "scope-not-found": "Couldn't find the scope in frame. Fill more of the frame with the eyepiece and make sure it's well lit.",
+    "low-contrast": "Not enough contrast against the background. Improve lighting or steady the phone and try again.",
+    "region-too-small": "The scope looks too small in frame — move closer or zoom in, then try again.",
+    "ocr-unavailable": "Couldn't load the text-reading engine — check your connection for first-time use (it's cached for offline use after that).",
+    "crop-too-small": "The detected scale area is too small to read. Move closer or zoom in, then try again.",
+    "ocr-failed": "Reading the scale failed — try holding the phone steadier and closer to the eyepiece.",
+    "too-few-numeric-tokens": "Couldn't read enough printed numbers on the scale. Make sure the 0-100 numerals are in frame, sharp, and well lit.",
+    "no-salinity-column-found": "Found numbers but couldn't identify the 0-100 Salinity scale specifically. Try improving focus/lighting, or calibrate manually below.",
+    "too-few-tick-candidates": "Only found a couple of matching tick numbers — not enough to calibrate reliably. Try again with better framing.",
+    "fit-failed": "The detected tick numbers didn't line up consistently. Try again, or calibrate manually below.",
+  };
+
+  function setAutodetectStatus(text, kind) {
+    els.autodetectStatus.textContent = text;
+    els.autodetectStatus.classList.remove("error", "success");
+    if (kind) els.autodetectStatus.classList.add(kind);
+  }
+
+  els.btnAutodetect.addEventListener("click", async () => {
+    if (els.btnAutodetect.disabled) return;
+    els.btnAutodetect.disabled = true;
+    setAutodetectStatus("Detecting… this can take a few seconds, longer on first use.");
+
+    try {
+      const result = await window.AutoDetect.run(els.video, CONTAINER_ASPECT, getZoomLevel(), (m) => {
+        if (m && m.status) {
+          const pct = typeof m.progress === "number" ? ` ${Math.round(m.progress * 100)}%` : "";
+          setAutodetectStatus(`Detecting… ${m.status}${pct}`);
+        }
+      });
+
+      if (!result.ok) {
+        setAutodetectStatus(AUTODETECT_REASON_MESSAGES[result.reason] || "Auto-detect couldn't calibrate — try again or calibrate manually below.", "error");
+        return;
+      }
+
+      // Fill in the box/values the same way dragging the handles would -
+      // nothing is persisted until the user taps Save calibration, so
+      // this is always safe to try and easy to back out of via Cancel.
+      window.CalibrationCtl.box = result.box;
+      window.CalibrationCtl.values = result.values;
+      els.calTopValue.value = result.values.top;
+      els.calBottomValue.value = result.values.bottom;
+
+      const conf = result.confidence;
+      const droppedNote = conf.pointsDropped ? `, ignored ${conf.pointsDropped} unreliable reading${conf.pointsDropped > 1 ? "s" : ""}` : "";
+      setAutodetectStatus(`Detected using ${conf.pointsUsed} tick marks${droppedNote}. Review the box below, adjust if needed, then Save.`, "success");
+    } catch (e) {
+      setAutodetectStatus("Auto-detect ran into an unexpected error — try again or calibrate manually below.", "error");
+    } finally {
+      els.btnAutodetect.disabled = false;
+    }
+  });
+
   els.btnCalCancel.addEventListener("click", () => {
     window.CalibrationCtl.load(); // discard unsaved edits, revert to last saved (or defaults)
     dynamicXTracker.reset();
+    setAutodetectStatus(AUTODETECT_DEFAULT_STATUS);
     switchScreen("screen-live");
   });
 

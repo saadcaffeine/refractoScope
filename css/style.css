@@ -296,6 +296,22 @@ body {
   gap: 14px;
 }
 .cal-instructions { color: var(--text-dim); font-size: 0.87rem; line-height: 1.4; margin: 0; }
+
+.autodetect-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.autodetect-row .btn-secondary { align-self: flex-start; }
+.autodetect-row .btn-secondary:disabled { opacity: 0.6; }
+.autodetect-status { font-size: 0.78rem; color: var(--text-dim); line-height: 1.4; }
+.autodetect-status.error { color: var(--bad); }
+.autodetect-status.success { color: var(--good); }
+
 .cal-fields { display: flex; gap: 12px; }
 .cal-fields label {
   flex: 1;

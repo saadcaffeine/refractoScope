@@ -1,8 +1,12 @@
 # refractoScope
 
-**Version 0.2.0**
+**Version 0.3.0**
 
-A camera-based Salinity% reader for analog optical refractometers (the kind with a blue/dark region over a bright region and a 0-100% scale printed down the middle). Point your phone's camera at the eyepiece and refractoScope tracks the blue/bright interface line live and converts its position to a Salinity% reading — no lab equipment, no network connection, all processing happens on-device.
+**[Try it live](https://saadcaffeine.github.io/refractoScope/)** — open on a phone and tap "Add to Home Screen" to install it. No app store, no account, no data leaves the device.
+
+refractoScope turns a phone into a live digital readout for analog optical refractometers — the handheld kind with an eyepiece showing a blue/dark region over a bright region, split by a printed scale (Brix, salinity, or similar 0-100-style scales). Point the camera at the eyepiece and it tracks the blue/bright interface line in real time, continuously converting its position into a percentage reading, the same way a person would eyeball it against the printed ticks — except it does that 3× a second, without eye strain, and can save what it saw.
+
+It's built as an installable, offline-first Progressive Web App rather than a native app: everything - camera capture, image analysis, calibration, and (as of v0.3) even the optional OCR-assisted calibration helper - runs entirely on-device in the browser, with no server round-trip and no CV library to install. The core detection is plain Canvas pixel math (a brightness-gradient profiler, not OpenCV or any bundled vision library), which keeps the whole app small enough to fully cache for offline use after the first visit. Calibration works two ways: drag a box onto two known tick marks and type in their values (works on any scale, any instrument, always available), or tap **Auto-detect** and let a geometric-detection + on-device OCR pass read the printed 0/100 ticks for you (see below) - either way, nothing is saved until you confirm it. A **Tare** button lets you zero the instrument precisely against a known 0% sample, the way you would a real lab scale, and the detection window auto-recenters itself each frame against the scope's own edges so minor hand shake doesn't require perfectly steady hands.
 
 ## How it works
 
@@ -13,6 +17,7 @@ A camera-based Salinity% reader for analog optical refractometers (the kind with
 - **Horizontal auto-centering**: at the moment you save a calibration, refractoScope also detects the scope's left/right edges (the sharp dark-vignette-to-bright-interior boundary) and stores your box's x-bounds as fractions relative to that scope width instead of a fixed frame position. On the Live tab, it re-detects those edges every frame and re-centers the detection window to match — so minor hand vibration or drift doesn't require you to hold the phone perfectly still. This is confidence-gated: if the edges can't be found reliably in a given frame (e.g. poor contrast), it holds the last known-good position rather than guessing.
 - **No OpenCV/WASM**: detection is plain Canvas `ImageData` math, which keeps the whole app lightweight and trivially cacheable for offline use — no multi-megabyte CV library to download or bundle.
 - **2× zoom**: an optional digital zoom (**Settings → 2× zoom**) crops in around the center of the frame for a closer view of the scale, useful on phones held further back or with scales that read small. The same crop is applied consistently to the live video display, the calibration screen, the detector, and snapshots, so the guide box and detected line stay correctly aligned at either zoom level — a fractional box coordinate (like "dead center") always points at the same physical spot on the scale regardless of zoom. Changing zoom shifts what's framed, though, so recalibrate afterward for best accuracy.
+- **Auto-detect (OCR-assisted calibration)**: tap **Auto-detect** on the Calibrate screen to skip most of the manual dragging. It runs in two stages: first a cheap geometric pass (the same brightness-profile technique used everywhere else in this app, no external library) finds the scope's rough outline against the dark background; then [Tesseract.js](https://github.com/naptha/tesseract.js) (vendored locally under `js/vendor/tesseract/` — no CDN, so it still works offline after its first use) reads the printed tick numerals inside that region. It identifies which printed column is the 0-100 Salinity scale by content (looking for an exact "100" reading) rather than assuming a fixed left/right layout, since that varies by instrument, and fits a line through the detected ticks with automatic outlier rejection — a single bad OCR reading can't drag the result off, tested down to sub-1% error against a real reference photo. The box and values get filled in automatically; nothing is saved until you review it and tap **Save calibration** as usual, so it's always safe to try. First use downloads roughly 7MB (the OCR engine + English text data); after that it's cached for fully offline use, same as the rest of the app. If OCR can't get a confident reading (poor lighting, blur, an unusual print layout), it reports why and leaves manual calibration as the fallback.
 
 ## Requirements this app meets
 
@@ -40,7 +45,9 @@ Any field that can't be determined is simply left out rather than shown as blank
 
 ## Running it
 
-Camera access requires a **secure context** — `https://` or `http://localhost`. Two easy options:
+**Easiest: use the hosted copy.** [saadcaffeine.github.io/refractoScope](https://saadcaffeine.github.io/refractoScope/) is this repo's `main` branch, deployed automatically via GitHub Actions to GitHub Pages. Open it on a phone and use "Add to Home Screen" (Safari share sheet on iOS, or the install prompt on Android Chrome) to install it as a standalone app — no local setup needed.
+
+Camera access requires a **secure context** — `https://` or `http://localhost` — so if you'd rather run your own copy, two options:
 
 **Quick local test (same machine):**
 ```
@@ -49,13 +56,13 @@ python3 -m http.server 8080
 ```
 Open `http://localhost:8080` in a desktop browser to sanity-check the UI (camera permission prompt, screens, calibration drag handles).
 
-**On an actual phone:** you need HTTPS. The simplest path is deploying the folder as-is to any static host — GitHub Pages, Netlify, Vercel, Cloudflare Pages all work with zero configuration since this is a plain static site. Then open the HTTPS URL on your phone and use "Add to Home Screen" (Safari share sheet on iOS, or the install prompt on Android Chrome) to install it as a standalone app.
+**On an actual phone:** you need HTTPS. The simplest path is deploying the folder as-is to any static host — GitHub Pages, Netlify, Vercel, Cloudflare Pages all work with zero configuration since this is a plain static site. Then open the HTTPS URL on your phone and use "Add to Home Screen" to install it.
 
 ## Using it
 
 1. Open the app, tap **Enable camera**, allow access.
 2. Point the camera at the refractometer eyepiece so the scale fills the frame (steady, well-lit).
-3. Go to the **Calibrate** tab. Drag the box's top/bottom handles onto two ticks you can clearly see (defaults to 100 and 0), narrow the left/right handles so the box sits just around the tick marks (not the printed numbers), and set the corresponding values in the two fields — the value labels sit off to the right of the box so they don't cover the ticks you're aligning against. Every line on this screen is dashed for the same reason. The dashed outline around the box is the padded area actually sampled — that's expected, not a mistake.
+3. Go to the **Calibrate** tab. Either tap **Auto-detect** and let it read the printed scale for you (review the result, nudge the handles if needed), or drag the box's top/bottom handles onto two ticks you can clearly see (defaults to 100 and 0), narrow the left/right handles so the box sits just around the tick marks (not the printed numbers), and set the corresponding values in the two fields — the value labels sit off to the right of the box so they don't cover the ticks you're aligning against. Every line on this screen is dashed for the same reason. The dashed outline around the box is the padded area actually sampled — that's expected, not a mistake.
 4. Tap **Save calibration**. Back on the **Live** tab, the Salinity% reading updates automatically as you swap samples under the scope, and the guide box will visibly shift a little to track minor hand movement — no need to re-calibrate unless you change how you're holding the phone or switch lenses.
 5. For the most accurate zero, load a 0% sample (e.g. distilled water), wait for a stable/good-confidence reading, and tap **Tare** at the bottom-left of the Live view. A green dashed line marks the tared zero going forward, replacing the coarse dragged "0" edge. Re-tare any time, or clear it from **Settings → Zero point**.
 6. If the scale reads small in frame, enable **Settings → 2× zoom** for a closer digital crop, then recalibrate — a "2×" badge appears on the Live view as a reminder that zoom is active.
@@ -68,8 +75,10 @@ manifest.json        PWA metadata
 service-worker.js    offline cache-first strategy
 css/style.css        styling
 js/camera.js          getUserMedia, permissions, wake lock, torch, lens picker, backgrounding recovery
-js/detector.js        brightness-boundary detection + row-to-Salinity% mapping + temporal smoothing
+js/detector.js        brightness-boundary detection + row-to-Salinity% mapping + temporal smoothing + scope-body geometric detection
 js/calibration.js     draggable calibration box, persisted to localStorage
+js/autodetect.js      OCR-assisted auto-calibrate: geometric crop -> Tesseract.js -> column ID -> robust fit
+js/vendor/tesseract/   vendored Tesseract.js (engine, worker, WASM cores, English data) - no CDN dependency
 js/level.js            device-tilt plumb level (DeviceOrientationEvent)
 js/weather.js          opt-in geolocation + Open-Meteo daily temperature range
 js/app.js             screen wiring, detection loop, rendering
@@ -78,5 +87,6 @@ icons/                app icons
 
 ## Changelog
 
+- **v0.3.0** — Added **Auto-detect**: an OCR-assisted calibration helper on the Calibrate screen. A geometric pass (brightness-profile edge detection, no external library) finds the scope's outline, then [Tesseract.js](https://github.com/naptha/tesseract.js) (vendored locally under `js/vendor/tesseract/` — no CDN, cached for offline use after first run) reads the printed tick numerals, identifies the correct 0-100 scale column by content rather than a fixed layout assumption, and fits the result with automatic outlier rejection so a single bad OCR reading can't skew it. Fills in the calibration box and values automatically; always requires review + Save before it takes effect.
 - **v0.2.0** — Switched the scale from Brix% to Salinity% (0-100 range; new calibration defaults, dropped the Brix-only SG estimate). Added an optional 2× digital zoom (Settings), applied consistently across the live view, calibration, detection, and snapshots. Improved calibration-screen legibility: every alignment line is now dashed and value labels moved off to the right of the box so they no longer sit on top of the scale ticks. Added the Tare button (physically zero against a 0% sample) and a smaller, more precise detection buffer. Added horizontal auto-centering so the detection window tracks minor hand movement.
 - **v0.1.0** — Initial release: live camera Brix% reader with offline PWA support, calibration, front/back + multi-lens camera switching, digital plumb level, opt-in local weather, and snapshot capture with metadata overlay.
