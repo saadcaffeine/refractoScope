@@ -33,10 +33,13 @@
 (function () {
   "use strict";
 
-  const STORAGE_KEY = "refractoscope.calibration.v1";
+  // Bumped to v2 when the scale changed from Brix% to Salinity% (0-100)
+  // so a stale Brix-era calibration doesn't silently get reinterpreted
+  // as a Salinity reading - anyone upgrading starts fresh.
+  const STORAGE_KEY = "refractoscope.calibration.v2";
 
   const DEFAULT_BOX = { x0: 0.40, y0: 0.22, x1: 0.60, y1: 0.80 };
-  const DEFAULT_VALUES = { top: 30, bottom: 0 };
+  const DEFAULT_VALUES = { top: 100, bottom: 0 };
 
   // Vertical padding applied to the *sampling* window only, as a
   // fraction of the calibrated box's own height. Larger below than
@@ -234,10 +237,14 @@
       ctx.strokeRect(x0, by0, x1 - x0, by1 - by0);
       ctx.setLineDash([]);
 
-      // box outline (the calibrated reference - what the handles below drag)
+      // box outline (the calibrated reference - what the handles below
+      // drag) - dashed like every other alignment line so it's easy to
+      // see the physical scale ticks through it while lining up.
       ctx.strokeStyle = "#4c8dff";
       ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
       ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.setLineDash([]);
 
       // Tared zero line, if set - the authoritative value=bottom anchor,
       // which may sit above or below the dragged bottom edge.
@@ -272,7 +279,7 @@
       ctx.font = "600 13px -apple-system, sans-serif";
       ctx.textBaseline = "middle";
 
-      const drawHandle = (x, y, label) => {
+      const drawHandle = (x, y, label, labelX) => {
         ctx.beginPath();
         ctx.arc(x, y, 9, 0, Math.PI * 2);
         ctx.fillStyle = "#4c8dff";
@@ -282,13 +289,17 @@
         ctx.stroke();
         if (label != null) {
           ctx.fillStyle = "#eaf0ff";
-          ctx.fillText(label, x + 14, y);
+          ctx.fillText(label, labelX != null ? labelX : x + 14, y);
         }
       };
 
       const midX = (x0 + x1) / 2;
-      drawHandle(midX, y0, this.values.top + "°Bx");
-      drawHandle(midX, y1, this.values.bottom + "°Bx");
+      // Value labels sit off to the right of the box entirely (rather
+      // than right next to the handle, over the scale itself) so they
+      // don't obscure the tick marks the user is trying to line up.
+      const labelX = x1 + 14;
+      drawHandle(midX, y0, this.values.top + "%", labelX);
+      drawHandle(midX, y1, this.values.bottom + "%", labelX);
       drawHandle(x0, (y0 + y1) / 2, null);
       drawHandle(x1, (y0 + y1) / 2, null);
       ctx.restore();

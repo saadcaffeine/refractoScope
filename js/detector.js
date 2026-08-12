@@ -18,11 +18,11 @@
  *     top/bottom boundary) -> take the row of maximum |gradient|.
  *     That row is the blue/bright interface line, whether the
  *     transition is a sharp edge or a soft gradient.
- *  4. Map that row linearly to a Brix% using the calibration's two
- *     known tick values and their *original* (unbuffered) positions,
- *     so a transition found within the buffer zone correctly
- *     extrapolates to a value near (or slightly past) the low end
- *     rather than being clipped at it.
+ *  4. Map that row linearly to a Salinity% (0-100 scale) using the
+ *     calibration's two known tick values and their *original*
+ *     (unbuffered) positions, so a transition found within the buffer
+ *     zone correctly extrapolates to a value near (or slightly past)
+ *     the low end rather than being clipped at it.
  *
  * A second, independent pass (detectHorizontalBounds) finds the
  * left/right edges of the illuminated scope body against the dark
@@ -212,16 +212,6 @@
   }
 
   /**
-   * Estimate specific gravity (wort) from Brix using the standard
-   * brewing approximation (matches the "SG wort" column printed on
-   * these dual-scale refractometers at 20C reference).
-   */
-  function brixToSG(brix) {
-    if (!isFinite(brix)) return NaN;
-    return 1 + brix / (258.6 - (brix / 258.2) * 227.1);
-  }
-
-  /**
    * Temporal smoother: fast-snaps to large changes (new sample placed
    * under the scope), slow-smooths small jitter (stable reading).
    */
@@ -251,7 +241,6 @@
     analyzeFrame,
     detectHorizontalBounds,
     rowFracToValue,
-    brixToSG,
     createSmoother,
   };
 })();

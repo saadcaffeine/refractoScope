@@ -26,8 +26,7 @@
     btnSettingsLevel: $("btn-settings-level"),
     settingsWeatherStatus: $("settings-weather-status"),
     btnSettingsWeather: $("btn-settings-weather"),
-    brixValue: $("brix-value"),
-    sgValue: $("sg-value"),
+    salinityValue: $("salinity-value"),
     btnSnapshot: $("btn-snapshot"),
     settingsSnapshotStatus: $("settings-snapshot-status"),
     toggleSnapshotOverlay: $("toggle-snapshot-overlay"),
@@ -51,6 +50,8 @@
     rowLens: $("row-lens"),
     lensSelect: $("lens-select"),
     lensSubStatus: $("lens-sub-status"),
+    toggleZoom: $("toggle-zoom"),
+    zoomBadge: $("zoom-badge"),
     toggleWakelock: $("toggle-wakelock"),
     settingsOfflineStatus: $("settings-offline-status"),
     btnResetCal: $("btn-reset-cal"),
@@ -364,6 +365,13 @@
     }
   }
 
+  els.toggleZoom.addEventListener("change", () => {
+    setZoomLevel(els.toggleZoom.checked ? 2 : 1);
+    applyZoomToVideoEl();
+    smoother.reset();
+    dynamicXTracker.reset();
+  });
+
   els.lensSelect.addEventListener("change", async () => {
     const deviceId = els.lensSelect.value;
     if (!deviceId) return;
@@ -380,7 +388,14 @@
   });
 
   // ---------- Cover-fit drawing helper ----------
-  function getCoverSourceRect(video, containerAspect) {
+  // `zoom` (1 or 2) shrinks the source crop toward its center, giving a
+  // digital zoom that stays perfectly in sync between what's displayed
+  // (the <video> element gets a matching CSS transform, see
+  // applyZoomToVideoEl) and what's analyzed/calibrated/snapshotted -
+  // all three consumers below share this same helper, so fractional
+  // box coordinates keep meaning the same thing at any zoom level.
+  function getCoverSourceRect(video, containerAspect, zoom) {
+    zoom = zoom || 1;
     const vw = video.videoWidth || 1;
     const vh = video.videoHeight || 1;
     const videoAspect = vw / vh;
@@ -396,14 +411,46 @@
       sx = 0;
       sy = (vh - sh) / 2;
     }
+    if (zoom > 1) {
+      const zsw = sw / zoom, zsh = sh / zoom;
+      sx += (sw - zsw) / 2;
+      sy += (sh - zsh) / 2;
+      sw = zsw;
+      sh = zsh;
+    }
     return { sx, sy, sw, sh };
   }
 
-  function drawVideoCover(ctx, video, destW, destH) {
+  function drawVideoCover(ctx, video, destW, destH, zoom) {
     if (!video.videoWidth) return false;
-    const { sx, sy, sw, sh } = getCoverSourceRect(video, destW / destH);
+    const { sx, sy, sw, sh } = getCoverSourceRect(video, destW / destH, zoom);
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, destW, destH);
     return true;
+  }
+
+  // ---------- Zoom (digital, applied consistently to display + detection) ----------
+  const ZOOM_STORAGE_KEY = "refractoscope.zoom.v1";
+
+  function getZoomLevel() {
+    try {
+      return localStorage.getItem(ZOOM_STORAGE_KEY) === "2" ? 2 : 1;
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  function setZoomLevel(z) {
+    try { localStorage.setItem(ZOOM_STORAGE_KEY, String(z)); } catch (e) { /* ignore */ }
+  }
+
+  /** Visually zooms the live <video> element to match the digital crop
+   *  used everywhere else (see getCoverSourceRect). The overlay canvas
+   *  itself is never transformed - its fractional coordinates already
+   *  line up because they're derived from the same zoomed crop. */
+  function applyZoomToVideoEl() {
+    const z = getZoomLevel();
+    els.video.style.transform = z > 1 ? `scale(${z})` : "";
+    els.zoomBadge.classList.toggle("hidden", z <= 1);
   }
 
   // ---------- Snapshot (save a still image locally) ----------
@@ -532,7 +579,7 @@
     const video = els.video;
     if (!video.videoWidth) return null;
 
-    const { sx, sy, sw, sh } = getCoverSourceRect(video, CONTAINER_ASPECT);
+    const { sx, sy, sw, sh } = getCoverSourceRect(video, CONTAINER_ASPECT, getZoomLevel());
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(sw);
     canvas.height = Math.round(sh);
@@ -567,7 +614,7 @@
 
       // Reading label pill, bottom-left (unchanged from before).
       const label = lastTick && lastTick.confLevel !== "bad"
-        ? `${lastTick.value.toFixed(1)}°Bx  •  SG ${lastTick.sg.toFixed(3)}`
+        ? `${lastTick.value.toFixed(1)}% salinity`
         : "No signal";
       const fontSize = Math.round(w * 0.045);
       ctx.font = `700 ${fontSize}px -apple-system, sans-serif`;
@@ -721,7 +768,7 @@
     if (document.hidden) return;
     if (!els.video.videoWidth) return;
 
-    if (!drawVideoCover(analysisCtx, els.video, ANALYSIS_WIDTH, ANALYSIS_HEIGHT)) return;
+    if (!drawVideoCover(analysisCtx, els.video, ANALYSIS_WIDTH, ANALYSIS_HEIGHT, getZoomLevel())) return;
     let imageData;
     try {
       imageData = analysisCtx.getImageData(0, 0, ANALYSIS_WIDTH, ANALYSIS_HEIGHT);
@@ -790,7 +837,6 @@
       contrast: result.contrast,
       rawValue,
       value: smoothed.value,
-      sg: window.Detector.brixToSG(smoothed.value),
       confLevel: conf.level,
       confLabel: conf.label,
     };
@@ -835,7 +881,9 @@
 
     ctx.strokeStyle = "rgba(76,141,255,0.55)";
     ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
     ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.setLineDash([]);
 
     if (window.CalibrationCtl.isTared()) {
       const zy = window.CalibrationCtl.zeroRowFrac * cssH;
@@ -855,17 +903,17 @@
     const lineY = lastTick.frameRowFrac * cssH;
     ctx.strokeStyle = lastTick.confLevel === "bad" ? "rgba(255,91,110,0.9)" : "#ff5b6e";
     ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 4]);
     ctx.beginPath();
     ctx.moveTo(x0, lineY);
     ctx.lineTo(x1, lineY);
     ctx.stroke();
+    ctx.setLineDash([]);
 
     if (lastTick.confLevel === "bad") {
-      els.brixValue.textContent = "--.-";
-      els.sgValue.textContent = "--";
+      els.salinityValue.textContent = "--.-";
     } else {
-      els.brixValue.textContent = lastTick.value.toFixed(1);
-      els.sgValue.textContent = lastTick.sg.toFixed(3);
+      els.salinityValue.textContent = lastTick.value.toFixed(1);
     }
 
     els.confidenceDot.className = "dot " + lastTick.confLevel;
@@ -886,7 +934,7 @@
       const { ctx, cssW, cssH } = resizeCanvasToContainer(els.calCanvas);
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, cssW, cssH);
-      drawVideoCover(ctx, els.video, cssW, cssH);
+      drawVideoCover(ctx, els.video, cssW, cssH, getZoomLevel());
 
       window.CalibrationCtl.drawOverlay(ctx, cssW, cssH);
 
@@ -947,7 +995,7 @@
   function establishDynamicXReference() {
     const box = window.CalibrationCtl.box;
     try {
-      if (els.video.videoWidth && drawVideoCover(analysisCtx, els.video, ANALYSIS_WIDTH, ANALYSIS_HEIGHT)) {
+      if (els.video.videoWidth && drawVideoCover(analysisCtx, els.video, ANALYSIS_WIDTH, ANALYSIS_HEIGHT, getZoomLevel())) {
         const imageData = analysisCtx.getImageData(0, 0, ANALYSIS_WIDTH, ANALYSIS_HEIGHT);
         const y0px = Math.round(box.y0 * ANALYSIS_HEIGHT);
         const y1px = Math.round(box.y1 * ANALYSIS_HEIGHT);
@@ -986,7 +1034,7 @@
       els.settingsCalStatus.textContent = "Not calibrated — using defaults";
       return;
     }
-    const range = `Calibrated (${window.CalibrationCtl.values.bottom}–${window.CalibrationCtl.values.top} °Bx)`;
+    const range = `Calibrated (${window.CalibrationCtl.values.bottom}–${window.CalibrationCtl.values.top}%)`;
     els.settingsCalStatus.textContent = window.CalibrationCtl.dynamicX
       ? `${range} · auto-centering on`
       : `${range} · auto-centering unavailable (recalibrate in brighter contrast)`;
@@ -1062,6 +1110,8 @@
     window.CalibrationCtl.load();
     window.CalibrationCtl.attach(els.calCanvas);
     els.toggleSnapshotOverlay.checked = snapshotOverlayEnabled();
+    els.toggleZoom.checked = getZoomLevel() === 2;
+    applyZoomToVideoEl();
 
     // Level: no-op prompt needed on Android/desktop, starts reading
     // immediately. On iOS it stays inactive until the widget/Settings

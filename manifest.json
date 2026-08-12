@@ -1,7 +1,7 @@
 {
   "name": "refractoScope",
   "short_name": "refractoScope",
-  "description": "Live camera reader for optical refractometer Brix% scales.",
+  "description": "Live camera reader for optical refractometer Salinity% scales.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

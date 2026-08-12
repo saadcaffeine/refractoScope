@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="refractoScope">
-<meta name="description" content="Live camera reader for optical refractometer Brix% scales. Works offline.">
+<meta name="description" content="Live camera reader for optical refractometer Salinity% scales. Works offline.">
 <title>refractoScope</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png">
@@ -44,7 +44,7 @@
           <svg viewBox="0 0 24 24" width="48" height="48"><path d="M4 7a2 2 0 0 1 2-2h2.2l.8-1.2A2 2 0 0 1 10.66 3h2.68a2 2 0 0 1 1.66.8L15.8 5H18a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="13" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
         </div>
         <h1>Camera access needed</h1>
-        <p>refractoScope reads the Brix% scale live through your camera. Nothing leaves your device &mdash; all processing happens locally, and the app keeps working offline once loaded.</p>
+        <p>refractoScope reads the Salinity% scale live through your camera. Nothing leaves your device &mdash; all processing happens locally, and the app keeps working offline once loaded.</p>
         <button id="btn-request-camera" class="btn-primary">Enable camera</button>
         <p id="permission-status" class="permission-status">Status: checking&hellip;</p>
         <div id="permission-denied-help" class="permission-help hidden">
@@ -64,6 +64,7 @@
         <canvas id="overlay"></canvas>
         <div id="offline-badge" class="badge hidden">Offline</div>
         <div id="stability-badge" class="badge badge-stability hidden">Stabilizing&hellip;</div>
+        <div id="zoom-badge" class="badge badge-zoom hidden">2&times;</div>
         <button id="btn-tare" class="tare-btn" title="Tare: load a 0% sample (e.g. distilled water), then tap to set 0" aria-label="Tare / set zero" disabled>
           <svg viewBox="0 0 24 24"><path d="M12 3v4M7 5.5l1.8 3.1M17 5.5l-1.8 3.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="14" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 10.5v4l2.8 1.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>Tare</span>
@@ -75,8 +76,7 @@
 
       <div class="readout">
         <div class="readout-main">
-          <div class="readout-value"><span id="brix-value">--.-</span><span class="unit">°Bx</span></div>
-          <div class="readout-sub">SG (wort) est. <span id="sg-value">--</span></div>
+          <div class="readout-value"><span id="salinity-value">--.-</span><span class="unit">%</span></div>
         </div>
         <button id="btn-snapshot" class="snapshot-btn" title="Save snapshot" aria-label="Save snapshot" disabled>
           <svg viewBox="0 0 24 24"><path d="M9 3.5 7.6 5.5H5a2 2 0 0 0-2 2v10.5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7.5a2 2 0 0 0-2-2h-2.6L15 3.5H9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
@@ -96,13 +96,13 @@
         <canvas id="cal-canvas"></canvas>
       </div>
       <div class="cal-panel">
-        <p class="cal-instructions">Drag the two handles onto two known tick marks on the scale (e.g. the <strong>30</strong> and <strong>0</strong> Brix ticks), narrow the box to sit just inside the tick column, then confirm the values below. The dashed outline shows the padded area actually sampled — it's normal for it to extend below the box so low readings near the bottom tick still detect reliably.</p>
+        <p class="cal-instructions">Drag the two handles onto two known tick marks on the scale (e.g. the <strong>100</strong> and <strong>0</strong> Salinity ticks), narrow the box to sit just inside the tick column, then confirm the values below. All the alignment lines are dashed and the value labels sit off to the right of the box, out of the way of the scale itself, so it's easier to see the tick marks underneath while lining things up. The dashed outline shows the padded area actually sampled — it's normal for it to extend below the box so low readings near the bottom tick still detect reliably.</p>
         <div class="cal-fields">
           <label>Top handle value
-            <input id="cal-top-value" type="number" inputmode="decimal" value="30" step="0.5">
+            <input id="cal-top-value" type="number" inputmode="decimal" value="100" min="0" max="100" step="0.5">
           </label>
           <label>Bottom handle value
-            <input id="cal-bottom-value" type="number" inputmode="decimal" value="0" step="0.5">
+            <input id="cal-bottom-value" type="number" inputmode="decimal" value="0" min="0" max="100" step="0.5">
           </label>
         </div>
         <div class="cal-actions">
@@ -171,6 +171,17 @@
             <div class="settings-sub" id="lens-sub-status">Detecting lenses&hellip;</div>
           </div>
           <select id="lens-select" class="lens-select" aria-label="Choose lens"></select>
+        </div>
+
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">2&times; zoom</div>
+            <div class="settings-sub">Digital crop for a closer view of the scale — recalibrate after changing</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-zoom">
+            <span class="slider"></span>
+          </label>
         </div>
 
         <div class="settings-row">
